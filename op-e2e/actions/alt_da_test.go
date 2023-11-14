@@ -66,7 +66,7 @@ func NewL2AltDA(log log.Logger, p *e2eutils.TestParams, t Testing) *L2AltDA {
 		MaxL1TxSize: 128_000,
 		BatcherKey:  dp.Secrets.Batcher,
 		AltDA:       storage,
-	}, sequencer.RollupClient(), l1Client, engine.EthClient())
+	}, sequencer.RollupClient(), l1Client, engine.EthClient(), engCl)
 
 	addresses := e2eutils.CollectAddresses(sd, dp)
 	cl := engine.EthClient()
