@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum-optimism/optimism/op-service/eth"
+	"github.com/ethereum/go-ethereum/common"
 )
 
 type MockEngine struct {
@@ -35,4 +36,13 @@ func (m *MockEngine) NewPayload(ctx context.Context, payload *eth.ExecutionPaylo
 
 func (m *MockEngine) ExpectNewPayload(payload *eth.ExecutionPayload, result *eth.PayloadStatusV1, err error) {
 	m.Mock.On("NewPayload", payload).Once().Return(result, &err)
+}
+
+func (m *MockEngine) SetSafeHead(ctx context.Context, safeHash common.Hash) error {
+	out := m.Mock.MethodCalled("SetSafeHead", safeHash)
+	return *out[0].(*error)
+}
+
+func (m *MockEngine) ExpectSetSafeHead(safeHash common.Hash, err error) {
+	m.Mock.On("SetSafeHead", safeHash).Once().Return(&err)
 }

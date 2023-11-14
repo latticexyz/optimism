@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/params"
 
@@ -137,4 +138,28 @@ func (s *EngineClient) SignalSuperchainV1(ctx context.Context, recommended, requ
 		Required:    required,
 	})
 	return result, err
+}
+
+func (s *EngineClient) SetSafeHead(ctx context.Context, safeHash common.Hash) error {
+	e := s.log.New("safe_hash", safeHash)
+	e.Trace("setting safe head")
+	err := s.client.CallContext(ctx, nil, "engine_setSafeHead", safeHash)
+	if err != nil {
+		e.Warn("Failed to set safe head", "err", err)
+		return err
+	}
+	e.Trace("Set safe head")
+	return nil
+}
+
+func (s *EngineClient) SetSubjectiveSafeHead(ctx context.Context, safeHash common.Hash) error {
+	e := s.log.New("safe_hash", safeHash)
+	e.Trace("setting subjective safe head")
+	err := s.client.CallContext(ctx, nil, "engine_setSubjectiveSafeHead", safeHash)
+	if err != nil {
+		e.Warn("Failed to set subjective safe head", "err", err)
+		return err
+	}
+	e.Trace("Set subjective safe head")
+	return nil
 }

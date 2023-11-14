@@ -214,9 +214,15 @@ type DeployConfig struct {
 	// RequiredProtocolVersion indicates the protocol version that
 	// nodes are required to adopt, to stay in sync with the network.
 	RequiredProtocolVersion params.ProtocolVersion `json:"requiredProtocolVersion"`
-	// RequiredProtocolVersion indicates the protocol version that
+	// RecommendedProtocolVersion indicates the protocol version that
 	// nodes are recommended to adopt, to stay in sync with the network.
 	RecommendedProtocolVersion params.ProtocolVersion `json:"recommendedProtocolVersion"`
+	// DaChallengeWindow represents the block interval during which the availability of a data commitment can be challenged.
+	DaChallengeWindow uint64 `json:"daChallengeWindow"`
+	// DaResolveWindow represents the block interval during which a data availability challenge can be resolved.
+	DaResolveWindow uint64 `json:"daResolveWindow"`
+	// DaBondSize represents the required bond size to initiate a data availability challenge.
+	DaBondSize uint64 `json:"daBondSize"`
 }
 
 // Copy will deeply copy the DeployConfig. This does a JSON roundtrip to copy
@@ -557,6 +563,8 @@ type L1Deployments struct {
 	SystemConfigProxy                 common.Address `json:"SystemConfigProxy"`
 	ProtocolVersions                  common.Address `json:"ProtocolVersions"`
 	ProtocolVersionsProxy             common.Address `json:"ProtocolVersionsProxy"`
+	DataAvailabilityChallenge         common.Address `json:"DataAvailabilityChallenge"`
+	DataAvailabilityChallengeProxy    common.Address `json:"DataAvailabilityChallengeProxy"`
 }
 
 // GetName will return the name of the contract given an address.

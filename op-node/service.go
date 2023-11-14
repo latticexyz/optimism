@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
 
+	altda "github.com/ethereum-optimism/optimism/alt-da/client"
 	"github.com/ethereum-optimism/optimism/op-node/flags"
 	"github.com/ethereum-optimism/optimism/op-node/node"
 	p2pcli "github.com/ethereum-optimism/optimism/op-node/p2p/cli"
@@ -71,6 +72,13 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		haltOption = ""
 	}
 
+	altDa := altda.ReadCLIConfig(ctx)
+	altDaConfig := altDa.Config()
+
+	if altDaConfig.Enabled {
+		driverConfig.AltDAEnabled = true
+	}
+
 	cfg := &node.Config{
 		L1:     l1Endpoint,
 		L2:     l2Endpoint,
@@ -105,6 +113,7 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 		Sync:              *syncConfig,
 		RollupHalt:        haltOption,
 		RethDBPath:        ctx.String(flags.L1RethDBPath.Name),
+		AltDA:             altDaConfig,
 	}
 
 	if err := cfg.LoadPersisted(log); err != nil {

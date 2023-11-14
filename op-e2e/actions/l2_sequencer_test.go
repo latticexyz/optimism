@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
@@ -27,7 +28,8 @@ func setupSequencerTest(t Testing, sd *e2eutils.SetupData, log log.Logger) (*L1M
 	l2Cl, err := sources.NewEngineClient(engine.RPCClient(), log, nil, sources.EngineClientDefaultConfig(sd.RollupCfg))
 	require.NoError(t, err)
 
-	sequencer := NewL2Sequencer(t, log, l1F, l2Cl, sd.RollupCfg, 0)
+	dataSrc := derive.NewDataSourceFactory(log, sd.RollupCfg, l1F)
+	sequencer := NewL2Sequencer(t, log, l1F, l2Cl, sd.RollupCfg, 0, dataSrc)
 	return miner, engine, sequencer
 }
 

@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
+	altda "github.com/ethereum-optimism/optimism/alt-da/client"
 	"github.com/ethereum-optimism/optimism/op-batcher/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
@@ -46,6 +47,7 @@ type DriverSetup struct {
 	L2Client     L2Client
 	RollupClient RollupClient
 	Channel      ChannelConfig
+	AltDA        altda.AltDARPC
 }
 
 // BatchSubmitter encapsulates a service responsible for submitting L2 tx
@@ -330,16 +332,26 @@ func (l *BatchSubmitter) publishTxToL1(ctx context.Context, queue *txmgr.Queue[t
 		return err
 	}
 
-	l.sendTransaction(txdata, queue, receiptsCh)
+	l.sendTransaction(ctx, txdata, queue, receiptsCh)
 	return nil
 }
 
 // sendTransaction creates & submits a transaction to the batch inbox address with the given `data`.
 // It currently uses the underlying `txmgr` to handle transaction sending & price management.
 // This is a blocking method. It should not be called concurrently.
-func (l *BatchSubmitter) sendTransaction(txdata txData, queue *txmgr.Queue[txData], receiptsCh chan txmgr.TxReceipt[txData]) {
+func (l *BatchSubmitter) sendTransaction(ctx context.Context, txdata txData, queue *txmgr.Queue[txData], receiptsCh chan txmgr.TxReceipt[txData]) {
 	// Do the gas estimation offline. A value of 0 will cause the [txmgr] to estimate the gas limit.
 	data := txdata.Bytes()
+	if l.AltDA != nil {
+		key, err := l.AltDA.SetPreImage(ctx, data)
+		if err != nil {
+			l.Log.Error("Failed to set preimage", "error", err)
+			// requeue frame if we fail to post to the DA Provider
+			l.recordFailedTx(txdata.ID(), err)
+			return
+		}
+		data = key
+	}
 	intrinsicGas, err := core.IntrinsicGas(data, nil, false, true, true, false)
 	if err != nil {
 		l.Log.Error("Failed to calculate intrinsic gas", "error", err)

@@ -7,6 +7,7 @@ import (
 	"math"
 	"time"
 
+	daclient "github.com/ethereum-optimism/optimism/alt-da/client"
 	"github.com/ethereum-optimism/optimism/op-node/flags"
 	"github.com/ethereum-optimism/optimism/op-node/p2p"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -63,6 +64,9 @@ type Config struct {
 
 	// [OPTIONAL] The reth DB path to read receipts from
 	RethDBPath string
+
+	// Config for connecting to an optional Alt DA service
+	AltDA daclient.Config
 }
 
 type RPCConfig struct {

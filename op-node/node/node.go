@@ -18,9 +18,12 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/log"
 
+	daclient "github.com/ethereum-optimism/optimism/alt-da/client"
+	damgr "github.com/ethereum-optimism/optimism/alt-da/mgr"
 	"github.com/ethereum-optimism/optimism/op-node/heartbeat"
 	"github.com/ethereum-optimism/optimism/op-node/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/p2p"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/driver"
 	"github.com/ethereum-optimism/optimism/op-node/version"
 	"github.com/ethereum-optimism/optimism/op-service/client"
@@ -304,7 +307,21 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 		return err
 	}
 
-	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
+	var l2Source driver.L2Chain
+	var dataSrc derive.DataAvailabilitySource
+	if cfg.AltDA.Enabled {
+		storageCl := daclient.New(n.log, cfg.AltDA.URL)
+		da := damgr.NewAltDA(n.log, damgr.Config{ChallengeWindow: 1000}, storageCl, n.l2Source)
+		// Swap the L1 DA source for the alt DA source that connects to the DA service
+		dataSrc = derive.NewDASourceFactory(n.log, &cfg.Rollup, n.l1Source, da)
+		// The Mod engine forwards ForkchoiceUpdated calls to the ForkchoiceUpdatedSubjective endpoint.
+		l2Source = driver.NewModEngine(n.l2Source, da, n.log)
+	} else {
+		dataSrc = derive.NewDataSourceFactory(n.log, &cfg.Rollup, n.l1Source)
+		l2Source = n.l2Source
+	}
+
+	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, l2Source, n.l1Source, n, dataSrc, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
 
 	return nil
 }

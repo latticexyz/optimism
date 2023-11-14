@@ -53,6 +53,9 @@ contract DeployConfig is Script {
     uint256 public systemConfigStartBlock;
     uint256 public requiredProtocolVersion;
     uint256 public recommendedProtocolVersion;
+    uint256 public daChallengeWindow;
+    uint256 public daResolveWindow;
+    uint256 public daBondSize;
 
     constructor(string memory _path) {
         console.log("DeployConfig: reading file %s", _path);
@@ -99,6 +102,9 @@ contract DeployConfig is Script {
         systemConfigStartBlock = stdJson.readUint(_json, "$.systemConfigStartBlock");
         requiredProtocolVersion = stdJson.readUint(_json, "$.requiredProtocolVersion");
         recommendedProtocolVersion = stdJson.readUint(_json, "$.recommendedProtocolVersion");
+        daChallengeWindow = stdJson.readUint(_json, "$.daChallengeWindow");
+        daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
+        daBondSize = stdJson.readUint(_json, "$.daBondSize");
 
         if (block.chainid == Chains.LocalDevnet || block.chainid == Chains.GethDevnet) {
             faultGameAbsolutePrestate = stdJson.readUint(_json, "$.faultGameAbsolutePrestate");

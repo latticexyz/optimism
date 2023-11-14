@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
+	damgr "github.com/ethereum-optimism/optimism/alt-da/mgr"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
@@ -48,6 +49,11 @@ type L2Chain interface {
 	L2BlockRefByLabel(ctx context.Context, label eth.BlockLabel) (eth.L2BlockRef, error)
 	L2BlockRefByHash(ctx context.Context, l2Hash common.Hash) (eth.L2BlockRef, error)
 	L2BlockRefByNumber(ctx context.Context, num uint64) (eth.L2BlockRef, error)
+}
+
+type SubjectiveEngine interface {
+	L2Chain
+	SetSubjectiveSafeHead(ctx context.Context, safeHash common.Hash) error
 }
 
 type DerivationPipeline interface {
@@ -114,14 +120,59 @@ type SequencerStateListener interface {
 	SequencerStopped() error
 }
 
+// ModEngine wraps an engine client and forwards safe head calls to subjective safe head.
+type ModEngine struct {
+	SubjectiveEngine
+	da  *damgr.AltDA
+	log log.Logger
+}
+
+// ForkchoiceUpdate forwards the safe head to the da service and then calls the underlying engine
+// subjective call.
+func (meng *ModEngine) ForkchoiceUpdate(ctx context.Context, state *eth.ForkchoiceState, attr *eth.PayloadAttributes) (*eth.ForkchoiceUpdatedResult, error) {
+	if state.SafeBlockHash != (common.Hash{}) {
+		safeHash := state.SafeBlockHash
+		// clear the safe hash so it isn't set during the forkchoice update
+		state.SafeBlockHash = common.Hash{}
+
+		result, err := meng.SubjectiveEngine.ForkchoiceUpdate(ctx, state, attr)
+		if err != nil {
+			return nil, err
+		}
+
+		// then set the subjective safe head instead of the safe head
+		if err := meng.SetSubjectiveSafeHead(ctx, safeHash); err != nil {
+			return nil, err
+		}
+
+		// forward the l2ref to the da service
+		blkRef, err := meng.L2BlockRefByHash(ctx, safeHash)
+		// error isn't a show stopper here, we can still update the engine
+		if err != nil || meng.da.SetSubjectiveSafeHead(ctx, blkRef) != nil {
+			log.Error("failed to notify da service about new l2 head", "err", err)
+		}
+		return result, nil
+	}
+
+	return meng.SubjectiveEngine.ForkchoiceUpdate(ctx, state, attr)
+}
+
+func NewModEngine(eng SubjectiveEngine, da *damgr.AltDA, log log.Logger) *ModEngine {
+	return &ModEngine{
+		SubjectiveEngine: eng,
+		da:               da,
+		log:              log,
+	}
+}
+
 // NewDriver composes an events handler that tracks L1 state, triggers L2 derivation, and optionally sequences new L2 blocks.
-func NewDriver(driverCfg *Config, cfg *rollup.Config, l2 L2Chain, l1 L1Chain, altSync AltSync, network Network, log log.Logger, snapshotLog log.Logger, metrics Metrics, sequencerStateListener SequencerStateListener, syncCfg *sync.Config) *Driver {
+func NewDriver(driverCfg *Config, cfg *rollup.Config, l2 L2Chain, l1 L1Chain, altSync AltSync, dataSrc derive.DataAvailabilitySource, network Network, log log.Logger, snapshotLog log.Logger, metrics Metrics, sequencerStateListener SequencerStateListener, syncCfg *sync.Config) *Driver {
 	l1 = NewMeteredL1Fetcher(l1, metrics)
 	l1State := NewL1State(log, metrics)
 	sequencerConfDepth := NewConfDepth(driverCfg.SequencerConfDepth, l1State.L1Head, l1)
 	findL1Origin := NewL1OriginSelector(log, cfg, sequencerConfDepth)
 	verifConfDepth := NewConfDepth(driverCfg.VerifierConfDepth, l1State.L1Head, l1)
-	derivationPipeline := derive.NewDerivationPipeline(log, cfg, verifConfDepth, l2, metrics, syncCfg)
+	derivationPipeline := derive.NewDerivationPipeline(log, cfg, verifConfDepth, dataSrc, l2, metrics, syncCfg)
 	attrBuilder := derive.NewFetchingAttributesBuilder(cfg, l1, l2)
 	engine := derivationPipeline
 	meteredEngine := NewMeteredEngine(cfg, engine, metrics, log)

@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
 	"github.com/ethereum-optimism/optimism/op-service/client"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -620,7 +621,8 @@ func RestartOpGeth(gt *testing.T, spanBatchTimeOffset *hexutil.Uint64) {
 	engRpc := &rpcWrapper{seqEng.RPCClient()}
 	l2Cl, err := sources.NewEngineClient(engRpc, log, nil, sources.EngineClientDefaultConfig(sd.RollupCfg))
 	require.NoError(t, err)
-	sequencer := NewL2Sequencer(t, log, l1F, l2Cl, sd.RollupCfg, 0)
+	dataSrc := derive.NewDataSourceFactory(log, sd.RollupCfg, l1F)
+	sequencer := NewL2Sequencer(t, log, l1F, l2Cl, sd.RollupCfg, 0, dataSrc)
 
 	batcher := NewL2Batcher(log, sd.RollupCfg, &BatcherCfg{
 		MinL1TxSize: 0,
@@ -711,7 +713,8 @@ func ConflictingL2Blocks(gt *testing.T, spanBatchTimeOffset *hexutil.Uint64) {
 	require.NoError(t, err)
 	l1F, err := sources.NewL1Client(miner.RPCClient(), log, nil, sources.L1ClientDefaultConfig(sd.RollupCfg, false, sources.RPCKindStandard))
 	require.NoError(t, err)
-	altSequencer := NewL2Sequencer(t, log, l1F, altSeqEngCl, sd.RollupCfg, 0)
+	dataSrc := derive.NewDataSourceFactory(log, sd.RollupCfg, l1F)
+	altSequencer := NewL2Sequencer(t, log, l1F, altSeqEngCl, sd.RollupCfg, 0, dataSrc)
 	altBatcher := NewL2Batcher(log, sd.RollupCfg, &BatcherCfg{
 		MinL1TxSize: 0,
 		MaxL1TxSize: 128_000,

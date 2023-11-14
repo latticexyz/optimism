@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	altda "github.com/ethereum-optimism/optimism/alt-da/client"
 	"github.com/ethereum-optimism/optimism/op-node/chaincfg"
 	openum "github.com/ethereum-optimism/optimism/op-service/enum"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -319,6 +320,7 @@ var Flags []cli.Flag
 func init() {
 	optionalFlags = append(optionalFlags, P2PFlags(EnvVarPrefix)...)
 	optionalFlags = append(optionalFlags, oplog.CLIFlags(EnvVarPrefix)...)
+	optionalFlags = append(optionalFlags, altda.CLIFlags(EnvVarPrefix)...)
 	Flags = append(requiredFlags, optionalFlags...)
 }
 

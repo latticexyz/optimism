@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
+	altda "github.com/ethereum-optimism/optimism/alt-da/client"
 	"github.com/ethereum-optimism/optimism/op-batcher/metrics"
 	"github.com/ethereum-optimism/optimism/op-batcher/rpc"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
@@ -42,6 +43,7 @@ type BatcherService struct {
 	L2Client   *ethclient.Client
 	RollupNode *sources.RollupClient
 	TxManager  txmgr.TxManager
+	AltDA      altda.AltDARPC
 
 	BatcherConfig
 
@@ -105,6 +107,9 @@ func (bs *BatcherService) initFromCLIConfig(ctx context.Context, version string,
 	}
 	if err := bs.initPProf(cfg); err != nil {
 		return fmt.Errorf("failed to start pprof server: %w", err)
+	}
+	if err := bs.initAltDA(ctx, cfg); err != nil {
+		return fmt.Errorf("failed to init AltDA client: %w", err)
 	}
 	bs.initDriver()
 	if err := bs.initRPCServer(cfg); err != nil {
@@ -234,6 +239,7 @@ func (bs *BatcherService) initDriver() {
 		L2Client:     bs.L2Client,
 		RollupClient: bs.RollupNode,
 		Channel:      bs.Channel,
+		AltDA:        bs.AltDA,
 	})
 }
 
@@ -254,6 +260,18 @@ func (bs *BatcherService) initRPCServer(cfg *CLIConfig) error {
 		return fmt.Errorf("unable to start RPC server: %w", err)
 	}
 	bs.rpcServer = server
+	return nil
+}
+
+func (bs *BatcherService) initAltDA(ctx context.Context, cfg *CLIConfig) error {
+	config := cfg.AltDA.Config()
+	if config.Enabled {
+		daCl, err := altda.New(ctx, bs.Log, config.URL)
+		if err != nil {
+			return err
+		}
+		bs.AltDA = daCl
+	}
 	return nil
 }
 

@@ -10,6 +10,7 @@ import (
 	gosync "sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
@@ -510,6 +511,13 @@ func (s *Driver) BlockRefWithStatus(ctx context.Context, num uint64) (eth.L2Bloc
 	case s.stateReq <- wait:
 		resp := s.syncStatus()
 		ref, err := s.l2.L2BlockRefByNumber(ctx, num)
+		if err == nil && s.driverConfig.AltDAEnabled {
+			resp.SafeL2, err = s.l2.L2BlockRefByLabel(ctx, eth.Safe)
+			// default to genesis if we have no safe head yet.
+			if errors.Is(err, ethereum.NotFound) {
+				resp.SafeL2, err = s.l2.L2BlockRefByHash(ctx, s.config.Genesis.L2.Hash)
+			}
+		}
 		<-wait
 		return ref, resp, err
 	case <-ctx.Done():

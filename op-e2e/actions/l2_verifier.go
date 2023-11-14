@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
 
+	altda "github.com/ethereum-optimism/optimism/alt-da/mgr"
 	"github.com/ethereum-optimism/optimism/op-node/node"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
@@ -57,9 +58,57 @@ type L2API interface {
 	OutputV0AtBlock(ctx context.Context, blockHash common.Hash) (*eth.OutputV0, error)
 }
 
-func NewL2Verifier(t Testing, log log.Logger, l1 derive.L1Fetcher, eng L2API, cfg *rollup.Config, syncCfg *sync.Config) *L2Verifier {
+type SubjectiveEngine interface {
+	L2API
+	SetSafeHead(ctx context.Context, safeHash common.Hash) error
+	SetSubjectiveSafeHead(ctx context.Context, safeHash common.Hash) error
+}
+
+// This is an ufortunate duplicate of the same struct in driver.go but this interface
+// is not compatible with the other one because of GetProof method.
+type ModEngine struct {
+	SubjectiveEngine
+	da *altda.AltDA
+}
+
+func (meng *ModEngine) ForkchoiceUpdate(ctx context.Context, state *eth.ForkchoiceState, attr *eth.PayloadAttributes) (*eth.ForkchoiceUpdatedResult, error) {
+	if state.SafeBlockHash != (common.Hash{}) {
+		safeHash := state.SafeBlockHash
+		// clear the safe hash so it isn't set during the forkchoice update
+		state.SafeBlockHash = common.Hash{}
+
+		result, err := meng.SubjectiveEngine.ForkchoiceUpdate(ctx, state, attr)
+		if err != nil {
+			return nil, err
+		}
+
+		// then set the subjective safe head instead of the safe head
+		if err := meng.SetSubjectiveSafeHead(ctx, safeHash); err != nil {
+			return nil, err
+		}
+
+		// forward the l2ref to the da service
+		blkRef, err := meng.L2BlockRefByHash(ctx, safeHash)
+		// error isn't a show stopper here, we can still update the engine
+		if err != nil || meng.da.SetSubjectiveSafeHead(ctx, blkRef) != nil {
+			log.Error("failed to notify da service about new l2 head", "err", err)
+		}
+		return result, nil
+	}
+
+	return meng.SubjectiveEngine.ForkchoiceUpdate(ctx, state, attr)
+}
+
+func NewModEngine(eng SubjectiveEngine, da *altda.AltDA) *ModEngine {
+	return &ModEngine{
+		SubjectiveEngine: eng,
+		da:               da,
+	}
+}
+
+func NewL2Verifier(t Testing, log log.Logger, l1 derive.L1Fetcher, eng L2API, cfg *rollup.Config, syncCfg *sync.Config, src derive.DataAvailabilitySource) *L2Verifier {
 	metrics := &testutils.TestDerivationMetrics{}
-	pipeline := derive.NewDerivationPipeline(log, cfg, l1, eng, metrics, syncCfg)
+	pipeline := derive.NewDerivationPipeline(log, cfg, l1, src, eng, metrics, syncCfg)
 	pipeline.Reset()
 
 	rollupNode := &L2Verifier{

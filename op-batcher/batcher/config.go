@@ -5,6 +5,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	altda "github.com/ethereum-optimism/optimism/alt-da/client"
 	"github.com/ethereum-optimism/optimism/op-batcher/compressor"
 	"github.com/ethereum-optimism/optimism/op-batcher/flags"
 	oplog "github.com/ethereum-optimism/optimism/op-service/log"
@@ -60,6 +61,7 @@ type CLIConfig struct {
 	PprofConfig      oppprof.CLIConfig
 	CompressorConfig compressor.CLIConfig
 	RPC              oprpc.CLIConfig
+	AltDA            altda.CLIConfig
 }
 
 func (c *CLIConfig) Check() error {
@@ -102,5 +104,6 @@ func NewConfig(ctx *cli.Context) *CLIConfig {
 		PprofConfig:            oppprof.ReadCLIConfig(ctx),
 		CompressorConfig:       compressor.ReadCLIConfig(ctx),
 		RPC:                    oprpc.ReadCLIConfig(ctx),
+		AltDA:                  altda.ReadCLIConfig(ctx),
 	}
 }

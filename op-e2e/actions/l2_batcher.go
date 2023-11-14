@@ -36,6 +36,10 @@ type L1TxAPI interface {
 	SendTransaction(ctx context.Context, tx *types.Transaction) error
 }
 
+type AltDASubmitter interface {
+	SetPreImage(ctx context.Context, data []byte) ([]byte, error)
+}
+
 type BatcherCfg struct {
 	// Limit the size of txs
 	MinL1TxSize uint64
@@ -44,6 +48,8 @@ type BatcherCfg struct {
 	BatcherKey *ecdsa.PrivateKey
 
 	GarbageCfg *GarbageChannelCfg
+
+	AltDA AltDASubmitter
 }
 
 type L2BlockRefs interface {
@@ -203,6 +209,16 @@ func (s *L2Batcher) ActL2BatchSubmit(t Testing, txOpts ...func(tx *types.Dynamic
 		t.Fatalf("failed to output channel data to frame: %v", err)
 	}
 
+	bytes := data.Bytes()
+
+	if s.l2BatcherCfg.AltDA != nil {
+		reply, err := s.l2BatcherCfg.AltDA.SetPreImage(t.Ctx(), data.Bytes())
+		if err != nil {
+			t.Fatalf("failed to post data to DA provider: %v", err)
+		}
+		bytes = reply
+	}
+
 	nonce, err := s.l1.PendingNonceAt(t.Ctx(), s.batcherAddr)
 	require.NoError(t, err, "need batcher nonce")
 
@@ -217,7 +233,7 @@ func (s *L2Batcher) ActL2BatchSubmit(t Testing, txOpts ...func(tx *types.Dynamic
 		To:        &s.rollupCfg.BatchInboxAddress,
 		GasTipCap: gasTipCap,
 		GasFeeCap: gasFeeCap,
-		Data:      data.Bytes(),
+		Data:      bytes,
 	}
 	for _, opt := range txOpts {
 		opt(rawTx)
