@@ -214,7 +214,7 @@ func (a *AltDA) StepChallenges(ctx context.Context, l1 L1Fetcher) error {
 // AdvanceWindow advances the challenge + reorg window and returns whether we need to reorg.
 func (a *AltDA) AdvanceWindow(ctx context.Context, l1Head eth.BlockID, l1 L1Fetcher) (bool, error) {
 	safeHead, reset, _ := a.blocks.AdvanceWindow(l1Head)
-	if safeHead != nil {
+	if safeHead != nil && !reset {
 		a.log.Info("setting safe head", "safeHead", safeHead, "origin", safeHead.L1Origin.Number)
 		if err := a.engineClient.SetSafeHead(ctx, safeHead.Hash); err != nil {
 			return false, err
@@ -292,6 +292,9 @@ func (a *AltDA) UpdateChallenges(ctx context.Context, block eth.BlockID, l1 L1Fe
 
 // GetPreImage combines results from the storage client and the challenge contract to inform the derivation pipeline on what to do.
 func (a *AltDA) GetPreImage(ctx context.Context, key []byte, blockNumber uint64) (*api.Response, error) {
+	// If the challenge head is ahead in the case of a pipeline reset or stall, we might have synced a
+	// challenge event for this commitment. Otherwise we mark the commitment as part of the cannonical
+	// chain so potential future challenge events can be selected.
 	ch := a.blocks.GetOrTrackChallenge(key, blockNumber)
 	val, err := a.storageClient.GetPreImage(ctx, key)
 	res := api.NewResponse(api.Available, val)

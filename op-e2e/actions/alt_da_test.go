@@ -115,7 +115,7 @@ func (a *L2AltDA) NewVerifier(t Testing) *L2Verifier {
 	return NewL2Verifier(t, a.log, l1F, modEng, a.sd.RollupCfg, &sync.Config{}, dataSrc)
 }
 
-func (a *L2AltDA) ActNewL2Tx(t Testing) {
+func (a *L2AltDA) ActSequencerIncludeTx(t Testing) {
 	a.alice.L2.ActResetTxOpts(t)
 	a.alice.L2.ActSetTxToAddr(&a.dp.Addresses.Bob)(t)
 	a.alice.L2.ActMakeTx(t)
@@ -125,6 +125,10 @@ func (a *L2AltDA) ActNewL2Tx(t Testing) {
 	a.sequencer.ActL2StartBlock(t)
 	a.engine.ActL2IncludeTx(a.alice.Address())(t)
 	a.sequencer.ActL2EndBlock(t)
+}
+
+func (a *L2AltDA) ActNewL2Tx(t Testing) {
+	a.ActSequencerIncludeTx(t)
 
 	a.batcher.ActL2BatchBuffer(t)
 	a.batcher.ActL2ChannelClose(t)
@@ -177,7 +181,8 @@ func (a *L2AltDA) ActChallengeInput(t Testing, comm []byte, bn uint64) {
 }
 
 func (a *L2AltDA) ActExpireLastInput(t Testing) {
-	for a.miner.l1Chain.CurrentBlock().Number.Uint64() <= a.lastCommBn+a.sd.DaCfg.ChallengeWindow {
+	reorgWindow := a.sd.DaCfg.ChallengeWindow + a.sd.DaCfg.ResolveWindow
+	for a.miner.l1Chain.CurrentBlock().Number.Uint64() <= a.lastCommBn+reorgWindow {
 		a.miner.ActL1StartBlock(3)(t)
 		a.miner.ActL1EndBlock(t)
 	}
@@ -227,6 +232,7 @@ func TestAltDA_ChallengeExpired(gt *testing.T) {
 		ChannelTimeout:      4,
 		L1BlockTime:         3,
 		DaChallengeWindow:   6,
+		DaResolveWindow:     6,
 	}
 	log := testlog.Logger(t, log.LvlDebug)
 	harness := NewL2AltDA(log, p, t)
@@ -277,6 +283,7 @@ func TestAltDA_ChallengeResolved(gt *testing.T) {
 		ChannelTimeout:      4,
 		L1BlockTime:         3,
 		DaChallengeWindow:   6,
+		DaResolveWindow:     6,
 	}
 	log := testlog.Logger(t, log.LvlDebug)
 	harness := NewL2AltDA(log, p, t)
@@ -324,6 +331,7 @@ func TestAltDA_StorageError(gt *testing.T) {
 		ChannelTimeout:      4,
 		L1BlockTime:         3,
 		DaChallengeWindow:   6,
+		DaResolveWindow:     6,
 	}
 	log := testlog.Logger(t, log.LvlDebug)
 	harness := NewL2AltDA(log, p, t)
@@ -355,6 +363,7 @@ func TestAltDA_ChallengeBadBlockNumber(gt *testing.T) {
 		ChannelTimeout:      4,
 		L1BlockTime:         3,
 		DaChallengeWindow:   6,
+		DaResolveWindow:     6,
 	}
 	log := testlog.Logger(t, log.LvlDebug)
 	harness := NewL2AltDA(log, p, t)
@@ -373,12 +382,12 @@ func TestAltDA_ChallengeBadBlockNumber(gt *testing.T) {
 
 	// challenge the input but with a wrong block number
 	// in the current challenge window
-	harness.ActChallengeInput(t, harness.lastComm, 8)
+	harness.ActChallengeInput(t, harness.lastComm, 14)
 
 	// catch up derivation
 	harness.sequencer.ActL2PipelineFull(t)
 
 	// da mgr should not have save the challenge
-	_, found := harness.daMgr.GetChallengeStatus(harness.lastComm, 8)
+	_, found := harness.daMgr.GetChallengeStatus(harness.lastComm, 14)
 	require.False(t, found)
 }
