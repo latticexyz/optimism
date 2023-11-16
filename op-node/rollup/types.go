@@ -93,6 +93,13 @@ type Config struct {
 
 	// L1 address that declares the protocol versions, optional (Beta feature)
 	ProtocolVersionsAddress common.Address `json:"protocol_versions_address,omitempty"`
+
+	// L1 Data Availability Challenge Contract Address
+	DaChallengeContractAddress common.Address `json:"da_challenge_contract_address,omitempty"`
+
+	DaChallengeWindowSize uint64 `json:"da_challenge_window_size,omitempty"`
+
+	DaResolveWindowSize uint64 `json:"da_resolve_window_size,omitempty"`
 }
 
 // ValidateL1Config checks L1 config variables for errors.

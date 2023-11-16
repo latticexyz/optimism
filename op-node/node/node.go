@@ -311,7 +311,12 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 	var dataSrc derive.DataAvailabilitySource
 	if cfg.AltDA.Enabled {
 		storageCl := daclient.New(n.log, cfg.AltDA.URL)
-		da := damgr.NewAltDA(n.log, damgr.Config{ChallengeWindow: 1000}, storageCl, n.l2Source)
+		daCfg := damgr.Config{
+			DaChallengeContractAddress: cfg.Rollup.DaChallengeContractAddress,
+			ChallengeWindow:            cfg.Rollup.DaChallengeWindowSize,
+			ResolveWindow:              cfg.Rollup.DaResolveWindowSize,
+		}
+		da := damgr.NewAltDA(n.log, daCfg, storageCl, n.l2Source)
 		// Swap the L1 DA source for the alt DA source that connects to the DA service
 		dataSrc = derive.NewDASourceFactory(n.log, &cfg.Rollup, n.l1Source, da)
 		// The Mod engine forwards ForkchoiceUpdated calls to the ForkchoiceUpdatedSubjective endpoint.

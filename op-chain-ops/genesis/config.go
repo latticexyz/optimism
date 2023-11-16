@@ -223,6 +223,9 @@ type DeployConfig struct {
 	DaResolveWindow uint64 `json:"daResolveWindow"`
 	// DaBondSize represents the required bond size to initiate a data availability challenge.
 	DaBondSize uint64 `json:"daBondSize"`
+
+	// DataAvailabilityChallengeProxy is the address of the DA challenge contract.
+	DataAvailabilityChallengeProxy common.Address `json:"dataAvailabilityChallengeProxy"`
 }
 
 // Copy will deeply copy the DeployConfig. This does a JSON roundtrip to copy
@@ -391,6 +394,7 @@ func (d *DeployConfig) SetDeployments(deployments *L1Deployments) {
 	d.L1ERC721BridgeProxy = deployments.L1ERC721BridgeProxy
 	d.SystemConfigProxy = deployments.SystemConfigProxy
 	d.OptimismPortalProxy = deployments.OptimismPortalProxy
+	d.DataAvailabilityChallengeProxy = deployments.DataAvailabilityChallengeProxy
 }
 
 // GetDeployedAddresses will get the deployed addresses of deployed L1 contracts
@@ -499,18 +503,21 @@ func (d *DeployConfig) RollupConfig(l1StartBlock *types.Block, l2GenesisBlockHas
 				GasLimit:    uint64(d.L2GenesisBlockGasLimit),
 			},
 		},
-		BlockTime:              d.L2BlockTime,
-		MaxSequencerDrift:      d.MaxSequencerDrift,
-		SeqWindowSize:          d.SequencerWindowSize,
-		ChannelTimeout:         d.ChannelTimeout,
-		L1ChainID:              new(big.Int).SetUint64(d.L1ChainID),
-		L2ChainID:              new(big.Int).SetUint64(d.L2ChainID),
-		BatchInboxAddress:      d.BatchInboxAddress,
-		DepositContractAddress: d.OptimismPortalProxy,
-		L1SystemConfigAddress:  d.SystemConfigProxy,
-		RegolithTime:           d.RegolithTime(l1StartBlock.Time()),
-		CanyonTime:             d.CanyonTime(l1StartBlock.Time()),
-		SpanBatchTime:          d.SpanBatchTime(l1StartBlock.Time()),
+		BlockTime:                  d.L2BlockTime,
+		MaxSequencerDrift:          d.MaxSequencerDrift,
+		SeqWindowSize:              d.SequencerWindowSize,
+		ChannelTimeout:             d.ChannelTimeout,
+		L1ChainID:                  new(big.Int).SetUint64(d.L1ChainID),
+		L2ChainID:                  new(big.Int).SetUint64(d.L2ChainID),
+		BatchInboxAddress:          d.BatchInboxAddress,
+		DepositContractAddress:     d.OptimismPortalProxy,
+		L1SystemConfigAddress:      d.SystemConfigProxy,
+		RegolithTime:               d.RegolithTime(l1StartBlock.Time()),
+		CanyonTime:                 d.CanyonTime(l1StartBlock.Time()),
+		SpanBatchTime:              d.SpanBatchTime(l1StartBlock.Time()),
+		DaChallengeContractAddress: d.DataAvailabilityChallengeProxy,
+		DaChallengeWindowSize:      d.DaChallengeWindow,
+		DaResolveWindowSize:        d.DaResolveWindow,
 	}, nil
 }
 
