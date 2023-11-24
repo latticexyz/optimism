@@ -40,7 +40,7 @@ func New(log log.Logger, url string) *Client {
 // the commitment was included in.
 func (c *Client) GetPreImage(ctx context.Context, key []byte) ([]byte, error) {
 	k := hexutil.Bytes(key)
-	resp, err := http.Get(fmt.Sprintf("%s/%s", c.url, k))
+	resp, err := http.Get(fmt.Sprintf("%s/get/%s", c.url, k))
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, ErrNotFound
 	}
@@ -60,7 +60,7 @@ func (c *Client) SetPreImage(ctx context.Context, img []byte) ([]byte, error) {
 	key := crypto.Keccak256(img)
 	k := hexutil.Bytes(key)
 	body := bytes.NewReader(img)
-	url := fmt.Sprintf("%s/%s", c.url, k)
+	url := fmt.Sprintf("%s/put/%s", c.url, k)
 	resp, err := http.Post(url, "application/octet-stream", body)
 	if err != nil {
 		return nil, err
