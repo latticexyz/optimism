@@ -201,7 +201,7 @@ type AltDA struct {
 }
 
 func NewAltDA(log log.Logger, cfg Config, storage PreImageFetcher, engine L2Engine) *AltDA {
-	reorgWindow := cfg.ChallengeWindow + cfg.ResolveWindow // + cfg.SequencerWindow
+	reorgWindow := cfg.ChallengeWindow + cfg.ResolveWindow
 	return &AltDA{
 		log:           log,
 		cfg:           cfg,
