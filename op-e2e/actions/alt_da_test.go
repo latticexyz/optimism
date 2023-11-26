@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -29,6 +30,7 @@ type L2AltDA struct {
 	batcher    *L2Batcher
 	sequencer  *L2Sequencer
 	engine     *L2Engine
+	engCl      *sources.EngineClient
 	sd         *e2eutils.SetupData
 	dp         *e2eutils.DeployParams
 	miner      *L1Miner
@@ -89,6 +91,7 @@ func NewL2AltDA(log log.Logger, p *e2eutils.TestParams, t Testing) *L2AltDA {
 		batcher:   batcher,
 		sequencer: sequencer,
 		engine:    engine,
+		engCl:     engCl,
 		sd:        sd,
 		dp:        dp,
 		miner:     miner,
@@ -237,6 +240,9 @@ func TestAltDA_ChallengeExpired(gt *testing.T) {
 	log := testlog.Logger(t, log.LvlDebug)
 	harness := NewL2AltDA(log, p, t)
 
+	// generate enough initial l1 blocks to have a safe head.
+	harness.ActL1Blocks(t, 5)
+
 	// Include a new l2 transaction, submitting an input commitment to the l1.
 	harness.ActNewL2Tx(t)
 
@@ -253,6 +259,11 @@ func TestAltDA_ChallengeExpired(gt *testing.T) {
 
 	// catch up the sequencer derivation pipeline with the new l1 blocks.
 	harness.sequencer.ActL2PipelineFull(t)
+
+	// make sure that the safe head was correctly updated on the engine.
+	l2Safe, err := harness.engCl.L2BlockRefByLabel(t.Ctx(), eth.Safe)
+	require.NoError(t, err)
+	require.Equal(t, uint64(11), l2Safe.Number)
 
 	newBlk, err := harness.engine.EthClient().BlockByNumber(t.Ctx(), blk.Number())
 	require.NoError(t, err)

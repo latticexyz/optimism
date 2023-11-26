@@ -45,14 +45,16 @@ func newL1Origin() *l1Origin {
 
 // Keeps track of the l2 blocks for each L1 origin in the reorg window.
 type L2Blocks struct {
-	byL1Origin map[uint64]*l1Origin
-	windowSize uint64
+	byL1Origin      map[uint64]*l1Origin
+	reorgWindowSize uint64
+	seqWindowSize   uint64
 }
 
-func NewL2Blocks(windowSize uint64) *L2Blocks {
+func NewL2Blocks(reorgWindowSize uint64, seqWindowSize uint64) *L2Blocks {
 	return &L2Blocks{
-		byL1Origin: make(map[uint64]*l1Origin),
-		windowSize: windowSize,
+		byL1Origin:      make(map[uint64]*l1Origin),
+		reorgWindowSize: reorgWindowSize,
+		seqWindowSize:   seqWindowSize,
 	}
 }
 
@@ -76,8 +78,8 @@ func (b *L2Blocks) AddBlock(block eth.L2BlockRef) {
 // sequencing window.
 func (b *L2Blocks) AdvanceWindow(l1Blk eth.BlockID) (*eth.L2BlockRef, bool, error) {
 	b.getOrNewOrigin(l1Blk.Number)
-	if len(b.byL1Origin) > int(b.windowSize) {
-		expNum := l1Blk.Number - b.windowSize
+	if len(b.byL1Origin) > int(b.reorgWindowSize) {
+		expNum := l1Blk.Number - b.reorgWindowSize
 		e, ok := b.byL1Origin[expNum]
 		if !ok {
 			return nil, false, fmt.Errorf("epoch not found")
@@ -89,11 +91,20 @@ func (b *L2Blocks) AdvanceWindow(l1Blk eth.BlockID) (*eth.L2BlockRef, bool, erro
 				b.SetExpiredChallenge([]byte(k), expNum)
 			}
 		}
-		// cleanup previous one, as past new safe head
-		if expNum > 0 {
-			delete(b.byL1Origin, expNum-1)
+		// we need to go back a whole sequencer window size to find the next safe head
+		if expNum > b.seqWindowSize {
+			originNum := expNum - b.seqWindowSize
+
+			// prune previous one, as past new safe head
+			if originNum > 0 {
+				delete(b.byL1Origin, originNum-1)
+			}
+
+			if origin, ok := b.byL1Origin[originNum]; ok && origin.head != nil {
+				return origin.head, expired > 0, nil
+			}
 		}
-		return e.head, expired > 0, nil
+		return nil, expired > 0, nil
 	}
 	return nil, false, fmt.Errorf("window not full")
 }
@@ -196,7 +207,7 @@ func NewAltDA(log log.Logger, cfg Config, storage PreImageFetcher, engine L2Engi
 		cfg:           cfg,
 		storageClient: storage,
 		engineClient:  engine,
-		blocks:        NewL2Blocks(reorgWindow),
+		blocks:        NewL2Blocks(reorgWindow, cfg.SequencerWindow),
 	}
 }
 
@@ -234,7 +245,7 @@ func (a *AltDA) UpdateChallenges(ctx context.Context, block eth.BlockID, l1 L1Fe
 	if err != nil {
 		return err
 	}
-	a.log.Info("updating challenges", "epoch", block.Number, "reorgWindow", a.blocks.windowSize, "numReceipts", len(receipts))
+	a.log.Info("updating challenges", "epoch", block.Number, "reorgWindow", a.blocks.reorgWindowSize, "numReceipts", len(receipts))
 	for i, rec := range receipts {
 		if rec.Status != types.ReceiptStatusSuccessful {
 			continue
