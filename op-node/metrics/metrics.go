@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/params"
 
+	da "github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/p2p/store"
 	ophttp "github.com/ethereum-optimism/optimism/op-service/httputil"
 	"github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -118,6 +119,8 @@ type Metrics struct {
 	L1ReorgDepth prometheus.Histogram
 
 	TransactionsSequencedTotal prometheus.Counter
+
+	AltDAMetrics da.AltDAMetricer
 
 	// Channel Bank Metrics
 	headChannelOpenedEvent *metrics.Event
@@ -378,6 +381,8 @@ func NewMetrics(procName string) *Metrics {
 			"recommended",
 			"required",
 		}),
+
+		AltDAMetrics: da.MakeAltDAMetrics(ns, factory),
 
 		registry: registry,
 		factory:  factory,

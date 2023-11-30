@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	daclient "github.com/ethereum-optimism/optimism/alt-da/client"
+	"github.com/ethereum-optimism/optimism/alt-da/metrics"
 	damgr "github.com/ethereum-optimism/optimism/alt-da/mgr"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
@@ -52,7 +53,7 @@ func NewL2AltDA(log log.Logger, p *e2eutils.TestParams, t Testing) *L2AltDA {
 
 	storage := &daclient.DAErrFaker{Client: daclient.NewMockClient(log)}
 
-	daMgr := damgr.NewAltDA(log, *sd.DaCfg, storage, engCl)
+	daMgr := damgr.NewAltDA(log, *sd.DaCfg, &metrics.NoopAltDAMetrics{}, storage, engCl)
 
 	l1F, err := sources.NewL1Client(miner.RPCClient(), log, nil, sources.L1ClientDefaultConfig(sd.RollupCfg, false, sources.RPCKindBasic))
 	require.NoError(t, err)
@@ -107,7 +108,7 @@ func (a *L2AltDA) NewVerifier(t Testing) *L2Verifier {
 	jwtPath := e2eutils.WriteDefaultJWT(t)
 	engine := NewL2Engine(t, a.log, a.sd.L2Cfg, a.sd.RollupCfg.Genesis.L1, jwtPath)
 	engCl := engine.EngineClient(t, a.sd.RollupCfg)
-	daMgr := damgr.NewAltDA(a.log, *a.sd.DaCfg, a.storage, engCl)
+	daMgr := damgr.NewAltDA(a.log, *a.sd.DaCfg, &metrics.NoopAltDAMetrics{}, a.storage, engCl)
 	modEng := NewModEngine(engCl, daMgr)
 
 	l1F, err := sources.NewL1Client(a.miner.RPCClient(), a.log, nil, sources.L1ClientDefaultConfig(a.sd.RollupCfg, false, sources.RPCKindBasic))

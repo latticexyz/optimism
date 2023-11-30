@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum-optimism/optimism/alt-da/api"
 	"github.com/ethereum-optimism/optimism/alt-da/client"
+	"github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum-optimism/optimism/op-bindings/bindings"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -45,13 +46,15 @@ func newL1Origin() *l1Origin {
 
 // Keeps track of the l2 blocks for each L1 origin in the reorg window.
 type L2Blocks struct {
+	metrics         metrics.AltDAMetricer
 	byL1Origin      map[uint64]*l1Origin
 	reorgWindowSize uint64
 	seqWindowSize   uint64
 }
 
-func NewL2Blocks(reorgWindowSize uint64, seqWindowSize uint64) *L2Blocks {
+func NewL2Blocks(metrics metrics.AltDAMetricer, reorgWindowSize uint64, seqWindowSize uint64) *L2Blocks {
 	return &L2Blocks{
+		metrics:         metrics,
 		byL1Origin:      make(map[uint64]*l1Origin),
 		reorgWindowSize: reorgWindowSize,
 		seqWindowSize:   seqWindowSize,
@@ -111,12 +114,16 @@ func (b *L2Blocks) AdvanceWindow(l1Blk eth.BlockID) (*eth.L2BlockRef, bool, erro
 
 // SetExpiredChallenge sets a challenge status as expired.
 func (b *L2Blocks) SetExpiredChallenge(key []byte, blockNumber uint64) {
+	b.metrics.RecordExpiredChallenge(key)
+
 	o := b.getOrNewOrigin(blockNumber)
 	o.challenges[string(key)] = challenge{status: api.ChallengeExpired}
 }
 
 // SetActiveChallenge sets the challenge status to active and the block where it was activated.
 func (b *L2Blocks) SetActiveChallenge(key []byte, blockNumber uint64, start uint64) {
+	b.metrics.RecordActiveChallenge(blockNumber, start, key)
+
 	o := b.getOrNewOrigin(blockNumber)
 	chall := o.challenges[string(key)]
 	// do not override an expired challenge
@@ -128,6 +135,8 @@ func (b *L2Blocks) SetActiveChallenge(key []byte, blockNumber uint64, start uint
 
 // SetResolvedChallenge sets the challenge status and the input data that resolved it.
 func (b *L2Blocks) SetResolvedChallenge(key []byte, input []byte, blockNumber uint64) {
+	b.metrics.RecordResolvedChallenge(key)
+
 	o := b.getOrNewOrigin(blockNumber)
 	o.challenges[string(key)] = challenge{status: api.ChallengeResolved, input: input}
 }
@@ -188,8 +197,9 @@ type Config struct {
 // AltDA keeps track of data availability and the challenge contract to determine
 // when to update the safe head.
 type AltDA struct {
-	log log.Logger
-	cfg Config
+	log     log.Logger
+	cfg     Config
+	metrics metrics.AltDAMetricer
 
 	storageClient PreImageFetcher
 	engineClient  L2Engine
@@ -200,14 +210,15 @@ type AltDA struct {
 	challHead eth.BlockID
 }
 
-func NewAltDA(log log.Logger, cfg Config, storage PreImageFetcher, engine L2Engine) *AltDA {
+func NewAltDA(log log.Logger, cfg Config, metrics metrics.AltDAMetricer, storage PreImageFetcher, engine L2Engine) *AltDA {
 	reorgWindow := cfg.ChallengeWindow + cfg.ResolveWindow
 	return &AltDA{
 		log:           log,
 		cfg:           cfg,
+		metrics:       metrics,
 		storageClient: storage,
 		engineClient:  engine,
-		blocks:        NewL2Blocks(reorgWindow, cfg.SequencerWindow),
+		blocks:        NewL2Blocks(metrics, reorgWindow, cfg.SequencerWindow),
 	}
 }
 
