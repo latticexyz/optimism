@@ -265,7 +265,7 @@ func (bs *BatcherService) initRPCServer(cfg *CLIConfig) error {
 func (bs *BatcherService) initAltDA(cfg *CLIConfig) {
 	config := cfg.AltDA.Config()
 	if config.Enabled {
-		bs.AltDA = altda.New(bs.Log, config.URL)
+		bs.AltDA = altda.New(bs.Log, bs.Metrics, config.URL)
 	}
 }
 

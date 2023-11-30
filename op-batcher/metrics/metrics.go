@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
+	dametrics "github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -47,6 +48,8 @@ type Metricer interface {
 	RecordBatchTxFailed()
 
 	Document() []opmetrics.DocumentedMetric
+
+	RecordStorageError()
 }
 
 type Metrics struct {
@@ -79,6 +82,8 @@ type Metrics struct {
 	channelOutputBytesTotal prometheus.Counter
 
 	batcherTxEvs opmetrics.EventVec
+
+	dametrics.AltDAMetricer
 }
 
 var _ Metricer = (*Metrics)(nil)
@@ -182,7 +187,8 @@ func NewMetrics(procName string) *Metrics {
 			Help:      "Total number of compressed output bytes from a channel.",
 		}),
 
-		batcherTxEvs: opmetrics.NewEventVec(factory, ns, "", "batcher_tx", "BatcherTx", []string{"stage"}),
+		batcherTxEvs:  opmetrics.NewEventVec(factory, ns, "", "batcher_tx", "BatcherTx", []string{"stage"}),
+		AltDAMetricer: dametrics.MakeAltDAMetrics(ns, factory),
 	}
 }
 
