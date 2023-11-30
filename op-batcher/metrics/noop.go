@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 
+	dametrics "github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	opmetrics "github.com/ethereum-optimism/optimism/op-service/metrics"
@@ -18,6 +19,7 @@ type noopMetrics struct {
 	opmetrics.NoopRefMetrics
 	txmetrics.NoopTxMetrics
 	opmetrics.NoopRPCMetrics
+	dametrics.NoopAltDAMetrics
 }
 
 var NoopMetrics Metricer = new(noopMetrics)
