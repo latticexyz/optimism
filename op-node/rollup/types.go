@@ -150,6 +150,13 @@ func (cfg *Config) TargetBlockNumber(timestamp uint64) (num uint64, err error) {
 	return cfg.Genesis.L2.Number + blocksSinceGenesis, nil
 }
 
+func (cfg *Config) ReorgWindowSize() uint64 {
+	if cfg.DaChallengeContractAddress != (common.Address{}) {
+		return cfg.DaChallengeWindowSize + cfg.DaResolveWindowSize + cfg.SeqWindowSize
+	}
+	return cfg.SeqWindowSize
+}
+
 type L1Client interface {
 	ChainID(context.Context) (*big.Int, error)
 	L1BlockRefByNumber(context.Context, uint64) (eth.L1BlockRef, error)
