@@ -5,6 +5,8 @@ import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/O
 import { ISemver } from "src/universal/ISemver.sol";
 import { SafeCall } from "src/libraries/SafeCall.sol";
 
+uint256 constant FIXED_GAS_OVERHEAD = 0;
+
 /// @dev An enum representing the status of a DA challenge.
 enum ChallengeStatus {
     Uninitialized,
@@ -81,6 +83,10 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
     /// @notice The amount required to post a challenge.
     uint256 public bondSize;
+
+    /// @notice The percentage of the cost to resolve a challenge that is refunded to the resolver.
+    /// @dev Must be between 0 and 100.
+    uint256 public resolverRefundPercentage;
 
     /// @notice A mapping from addresses to their bond balance in the contract.
     mapping(address => uint256) public balances;
@@ -214,6 +220,47 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         emit ChallengeStatusChanged(challengedHash, challengedBlockNumber, ChallengeStatus.Active);
     }
 
+    /// @notice Distribute the bond after a challenge is resolved.
+    ///         The challenger is refunded the amount exceeding the cost to resolve the challenge.
+    ///         The resolver is refunded a percentage of the resolving cost, defined by the resolverRefundPercentage.
+    ///         The remaining amount is burned by sending it to the 0 address.
+    function _distributeBond(uint256 challengedBlockNumber, bytes32 challengedHash) internal {
+        // count the number of zero bytes in the calldata
+        uint256 numZeroBytes;
+        unchecked {
+            for(uint256 i; i < msg.data.length; i++) {
+                if(msg.data[i] == bytes1(0)) {
+                    numZeroBytes++;
+                }
+            }
+        }
+
+        // total gas used = calldata gas + fixed overhead
+        uint256 totalGasUsed = numZeroBytes * 4 + (msg.data.length - numZeroBytes) * 16 + FIXED_GAS_OVERHEAD;
+
+        // TODO: decide if this should be just base fee or include priority fee
+        uint256 totalCost = totalGasUsed * block.basefee;
+
+        Challenge storage resolvedChallenge = challenges[challengedBlockNumber][challengedHash];
+
+        // refund the bond amount exceeding the resolving cost to the challenger
+        if(resolvedChallenge.lockedBond > totalCost) {
+            balances[resolvedChallenge.challenger] += resolvedChallenge.lockedBond - totalCost;
+            emit BalanceChanged(resolvedChallenge.challenger, balances[resolvedChallenge.challenger]);
+        }
+
+        // refund a percentage of the resolving cost to the resolver
+        uint256 resolverRefund = totalCost * resolverRefundPercentage / 100;
+        if(resolverRefund > 0) {
+            balances[msg.sender] += resolverRefund;
+            emit BalanceChanged(msg.sender, balances[msg.sender]);
+        }
+
+        // burn the remaining bond
+        payable(address(0)).transfer(totalCost - resolverRefund);
+        resolvedChallenge.lockedBond = 0;
+    }
+
     /// @notice Resolve a challenge by providing the pre-image data of the challenged commitment.
     /// @dev The provided pre-image data is hashed (keccak256) to verify that it matches the challenged commitment.
     ///      The function reverts if the challenge is not active or if the resolve window is not open.
@@ -236,6 +283,9 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
         // emit an event to notify that the challenge status is now resolved
         emit ChallengeStatusChanged(challengedHash, challengedBlockNumber, ChallengeStatus.Resolved);
+
+        // distribute the bond
+        _distributeBond(challengedBlockNumber, challengedHash);
     }
 
     /// @notice Unlock the bond associated wth an expired challenge.

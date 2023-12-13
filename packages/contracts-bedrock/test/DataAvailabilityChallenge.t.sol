@@ -196,14 +196,14 @@ contract DataAvailabilityChallengeTest is Test {
         dac.deposit{ value: dac.bondSize() }();
         dac.challenge(challengedBlockNumber, challengedHash);
 
-        // Resolve the challenge
+        // Resolve the challenge and measure the amount of gas it takes
         dac.resolve(challengedBlockNumber, challengedHash, preImage);
 
         // Expect the challenge to be resolved
         (address _challenger, uint256 _lockedBond, uint256 _startBlock, uint256 _resolvedBlock) = dac.challenges(challengedBlockNumber, challengedHash);
 
         assertEq(_challenger, address(this));
-        assertEq(_lockedBond, dac.bondSize());
+        assertEq(_lockedBond, 0);
         assertEq(_startBlock, block.number);
         assertEq(_resolvedBlock, block.number);
         assertEq(uint8(dac.getChallengeStatus(challengedBlockNumber, challengedHash)), uint8(ChallengeStatus.Resolved));
