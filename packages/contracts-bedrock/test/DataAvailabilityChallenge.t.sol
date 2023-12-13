@@ -2,13 +2,29 @@
 pragma solidity 0.8.15;
 
 import { Test } from "forge-std/Test.sol";
-import { DataAvailabilityChallenge, ChallengeStatus, Challenge } from "../src/L1/DataAvailabilityChallenge.sol";
+import { DataAvailabilityChallenge, ChallengeStatus, Challenge, getCallDataGas, RESOLVE_FIXED_GAS_OVERHEAD } from "../src/L1/DataAvailabilityChallenge.sol";
 import { Proxy } from "src/universal/Proxy.sol";
 
 address constant DAC_OWNER = address(1234);
 uint256 constant CHALLENGE_WINDOW = 1000;
 uint256 constant RESOLVE_WINDOW = 1000;
-uint256 constant BOND_SIZE = 1000;
+uint256 constant BOND_SIZE = 1000000;
+
+function getCallDataGas(bytes memory callData) pure returns (uint256 gas) {
+    // count the number of zero bytes in the calldata
+    uint256 numZeroBytes;
+    unchecked {
+        for(uint256 i; i < callData.length; i++) {
+            if(callData[i] == bytes1(0)) {
+                numZeroBytes++;
+            }
+        }
+    }
+
+    // total gas used = calldata gas + fixed overhead
+    gas = numZeroBytes * 4 // cost for zero calldata bytes
+        + (callData.length - numZeroBytes) * 16; // cost for non-zero calldata bytes
+}
 
 contract DataAvailabilityChallengeTest is Test {
     DataAvailabilityChallenge public dac;
@@ -196,17 +212,42 @@ contract DataAvailabilityChallengeTest is Test {
         dac.deposit{ value: dac.bondSize() }();
         dac.challenge(challengedBlockNumber, challengedHash);
 
-        // Resolve the challenge and measure the amount of gas it takes
+        // Resolve the challenge
         dac.resolve(challengedBlockNumber, challengedHash, preImage);
 
         // Expect the challenge to be resolved
         (address _challenger, uint256 _lockedBond, uint256 _startBlock, uint256 _resolvedBlock) = dac.challenges(challengedBlockNumber, challengedHash);
+
+        // TODO add tests for balances after resolving
 
         assertEq(_challenger, address(this));
         assertEq(_lockedBond, 0);
         assertEq(_startBlock, block.number);
         assertEq(_resolvedBlock, block.number);
         assertEq(uint8(dac.getChallengeStatus(challengedBlockNumber, challengedHash)), uint8(ChallengeStatus.Resolved));
+    }
+
+    function testResolveFixedGasOverhead(bytes memory preImage, uint256 challengedBlockNumber) public {
+        // Assume the block number is not close to the max uint256 value
+        vm.assume(challengedBlockNumber < type(uint256).max - dac.challengeWindow() - dac.resolveWindow());
+        bytes32 challengedHash = keccak256(preImage);
+
+        // Move to block after challenged block
+        vm.roll(challengedBlockNumber + 1);
+
+        // Challenge the hash
+        dac.deposit{ value: dac.bondSize() }();
+        dac.challenge(challengedBlockNumber, challengedHash);
+
+        // Resolve the challenge and measure the amount of gas it takes
+        uint256 gasUsed = gasleft();
+        (uint256 actualGasUsed, uint256 estimatedGasUsed) = dac.resolve(challengedBlockNumber, challengedHash, preImage);
+        gasUsed -= gasleft();
+
+        assertEq(actualGasUsed, estimatedGasUsed);
+
+        // uint256 fixedGasUsed = gasUsed - selfReportedGas;
+        // assertLt(fixedGasUsed, 2500);
     }
 
     function testResolveFailNonExistentChallenge() public {

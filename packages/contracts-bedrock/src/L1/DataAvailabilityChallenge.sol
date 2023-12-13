@@ -5,7 +5,7 @@ import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/O
 import { ISemver } from "src/universal/ISemver.sol";
 import { SafeCall } from "src/libraries/SafeCall.sol";
 
-uint256 constant FIXED_GAS_OVERHEAD = 0;
+uint256 constant RESOLVE_FIXED_GAS_OVERHEAD = 45277;
 
 /// @dev An enum representing the status of a DA challenge.
 enum ChallengeStatus {
@@ -224,40 +224,38 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     ///         The challenger is refunded the amount exceeding the cost to resolve the challenge.
     ///         The resolver is refunded a percentage of the resolving cost, defined by the resolverRefundPercentage.
     ///         The remaining amount is burned by sending it to the 0 address.
-    function _distributeBond(uint256 challengedBlockNumber, bytes32 challengedHash) internal {
-        // count the number of zero bytes in the calldata
-        uint256 numZeroBytes;
-        unchecked {
-            for(uint256 i; i < msg.data.length; i++) {
-                if(msg.data[i] == bytes1(0)) {
-                    numZeroBytes++;
-                }
-            }
-        }
-
-        // total gas used = calldata gas + fixed overhead
-        uint256 totalGasUsed = numZeroBytes * 4 + (msg.data.length - numZeroBytes) * 16 + FIXED_GAS_OVERHEAD;
+    function _distributeBond(uint256 challengedBlockNumber, bytes32 challengedHash, uint256 gasLeftAtStart) internal returns (uint256 totalGasUsed) {
+        // total gas used = calldata gas + execution gas + fixed overhead
+        uint256 callDataGas = getCallDataGas();
+        uint256 executionGas = gasLeftAtStart - gasleft();
+        totalGasUsed =  callDataGas + executionGas + RESOLVE_FIXED_GAS_OVERHEAD;
 
         // TODO: decide if this should be just base fee or include priority fee
         uint256 totalCost = totalGasUsed * block.basefee;
 
         Challenge storage resolvedChallenge = challenges[challengedBlockNumber][challengedHash];
+        uint256 lockedBond = resolvedChallenge.lockedBond;
 
         // refund the bond amount exceeding the resolving cost to the challenger
-        if(resolvedChallenge.lockedBond > totalCost) {
-            balances[resolvedChallenge.challenger] += resolvedChallenge.lockedBond - totalCost;
+        if(lockedBond > totalCost) {
+            uint256 challengerRefund = lockedBond - totalCost;
+            balances[resolvedChallenge.challenger] += challengerRefund;
+            lockedBond -= challengerRefund;
             emit BalanceChanged(resolvedChallenge.challenger, balances[resolvedChallenge.challenger]);
         }
 
-        // refund a percentage of the resolving cost to the resolver
+        // refund a percentage of the resolving cost to the resolver, but limit to the locked bond
         uint256 resolverRefund = totalCost * resolverRefundPercentage / 100;
+        resolverRefund = resolverRefund < lockedBond ? resolverRefund : lockedBond;
+
         if(resolverRefund > 0) {
             balances[msg.sender] += resolverRefund;
+            lockedBond -= resolverRefund;
             emit BalanceChanged(msg.sender, balances[msg.sender]);
         }
 
         // burn the remaining bond
-        payable(address(0)).transfer(totalCost - resolverRefund);
+        payable(address(0)).transfer(lockedBond);
         resolvedChallenge.lockedBond = 0;
     }
 
@@ -266,7 +264,9 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     ///      The function reverts if the challenge is not active or if the resolve window is not open.
     /// @param challengedBlockNumber The block number at which the commitment was made.
     /// @param preImage The pre-image data corresponding to the challenged commitment.
-    function resolve(uint256 challengedBlockNumber, bytes32 challengedHash, bytes calldata preImage) external {
+    function resolve(uint256 challengedBlockNumber, bytes32 challengedHash, bytes calldata preImage) external returns (uint256 actualGasUsed, uint256 estimatedGasUsed) {
+        uint256 gasLeftAtStart = gasleft();
+
         // require the provided input data to match the commitment
         if(challengedHash != keccak256(preImage)) {
             revert InvalidInputData(keccak256(preImage), challengedHash);
@@ -285,7 +285,9 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         emit ChallengeStatusChanged(challengedHash, challengedBlockNumber, ChallengeStatus.Resolved);
 
         // distribute the bond
-        _distributeBond(challengedBlockNumber, challengedHash);
+        estimatedGasUsed = _distributeBond(challengedBlockNumber, challengedHash, gasLeftAtStart);
+
+        actualGasUsed = gasLeftAtStart - gasleft();
     }
 
     /// @notice Unlock the bond associated wth an expired challenge.
@@ -307,4 +309,20 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         // Emit balance update event
         emit BalanceChanged(expiredChallenge.challenger, balances[expiredChallenge.challenger]);
     }
+}
+
+function getCallDataGas() pure returns (uint256 gas) {
+    // count the number of zero bytes in the calldata
+    uint256 numZeroBytes;
+    unchecked {
+        for(uint256 i; i < msg.data.length; i++) {
+            if(msg.data[i] == bytes1(0)) {
+                numZeroBytes++;
+            }
+        }
+    }
+
+    // total gas used = calldata gas + fixed overhead
+    gas = numZeroBytes * 4 // cost for zero calldata bytes
+        + (msg.data.length - numZeroBytes) * 16; // cost for non-zero calldata bytes
 }
