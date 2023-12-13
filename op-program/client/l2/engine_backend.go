@@ -27,7 +27,6 @@ type OracleBackedL2Chain struct {
 	head       *types.Header
 	safe       *types.Header
 	finalized  *types.Header
-	subjective *types.Header
 	vmCfg      vm.Config
 
 	// Block by number cache
@@ -229,8 +228,4 @@ func (o *OracleBackedL2Chain) SetFinalized(header *types.Header) {
 
 func (o *OracleBackedL2Chain) SetSafe(header *types.Header) {
 	o.safe = header
-}
-
-func (o *OracleBackedL2Chain) SetSubjectiveSafe(header *types.Header) {
-	o.subjective = header
 }

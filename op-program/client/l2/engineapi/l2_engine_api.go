@@ -39,7 +39,6 @@ type EngineBackend interface {
 	SetCanonical(head *types.Block) (common.Hash, error)
 	SetFinalized(header *types.Header)
 	SetSafe(header *types.Header)
-	SetSubjectiveSafe(header *types.Header)
 
 	consensus.ChainHeaderReader
 }
@@ -444,31 +443,4 @@ func (ea *L2EngineAPI) invalid(err error, latestValid *types.Header) *eth.Payloa
 	}
 	errorMsg := err.Error()
 	return &eth.PayloadStatusV1{Status: eth.ExecutionInvalid, LatestValidHash: &currentHash, ValidationError: &errorMsg}
-}
-
-func (api *L2EngineAPI) SetSubjectiveSafeHead(subjectiveSafeHash common.Hash) error {
-	subj := api.backend.GetHeaderByHash(subjectiveSafeHash)
-	if subj == nil {
-		return errors.New("cannot set subjective safe head to unknown block")
-	}
-	if expected := api.backend.GetCanonicalHash(subj.Number.Uint64()); expected != subjectiveSafeHash {
-		return fmt.Errorf("subjective-safe block %s is not part of the canonical chain, %s at %d is canonical", subjectiveSafeHash, expected, subj.Number)
-	}
-	api.backend.SetSubjectiveSafe(subj)
-	return nil
-}
-
-func (ea *L2EngineAPI) SetSafeHead(safeHash common.Hash) error {
-	safeHeader := ea.backend.GetHeaderByHash(safeHash)
-	if safeHeader == nil {
-		ea.log.Warn("Safe block not available in database")
-		return errors.New("safe block not available in database")
-	}
-	if ea.backend.GetCanonicalHash(safeHeader.Number.Uint64()) != safeHash {
-		ea.log.Warn("Safe block not in canonical chain")
-		return errors.New("safe block not in canonical chain")
-	}
-	// Set the safe block
-	ea.backend.SetSafe(safeHeader)
-	return nil
 }
