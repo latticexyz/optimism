@@ -5,6 +5,13 @@ import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/O
 import { ISemver } from "src/universal/ISemver.sol";
 import { SafeCall } from "src/libraries/SafeCall.sol";
 
+/**
+ * TODO: what if instead of running the distribute logic in the resolve function itself,
+ * we just store the preImage size and the measured gas cost.
+ * That should give us a more accurate number.
+ * Then we can do the distribution in `unlockBond`.
+ */
+
 uint256 constant RESOLVE_FIXED_GAS_OVERHEAD = 45277;
 
 /// @dev An enum representing the status of a DA challenge.
