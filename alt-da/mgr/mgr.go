@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/ethereum-optimism/optimism/alt-da/api"
 	"github.com/ethereum-optimism/optimism/alt-da/client"
@@ -23,149 +22,6 @@ var (
 	ChallengeStatusEventABI     = "ChallengeStatusChanged(bytes32,uint256,uint8)"
 	ChallengeStatusEventABIHash = crypto.Keccak256Hash([]byte(ChallengeStatusEventABI))
 )
-
-// challenge object stores the status and if active the block where it was activated.
-type challenge struct {
-	status     api.ChallengeStatusCode
-	input      []byte
-	startBlock uint64
-}
-
-// l1Origin keeps track of all input commitments included in the l1 block, their challenge states
-// and a ref to the last l2 block derived from that epoch.
-type l1Origin struct {
-	challenges map[string]challenge
-	head       *eth.L2BlockRef
-}
-
-func newL1Origin() *l1Origin {
-	return &l1Origin{
-		challenges: make(map[string]challenge),
-	}
-}
-
-// Keeps track of the l2 blocks for each L1 origin in the reorg window.
-type L2Blocks struct {
-	metrics         metrics.AltDAMetricer
-	byL1Origin      map[uint64]*l1Origin
-	reorgWindowSize uint64
-	seqWindowSize   uint64
-}
-
-func NewL2Blocks(metrics metrics.AltDAMetricer, reorgWindowSize uint64, seqWindowSize uint64) *L2Blocks {
-	return &L2Blocks{
-		metrics:         metrics,
-		byL1Origin:      make(map[uint64]*l1Origin),
-		reorgWindowSize: reorgWindowSize,
-		seqWindowSize:   seqWindowSize,
-	}
-}
-
-func (b *L2Blocks) getOrNewOrigin(number uint64) *l1Origin {
-	_, ok := b.byL1Origin[number]
-	if !ok {
-		b.byL1Origin[number] = newL1Origin()
-	}
-	return b.byL1Origin[number]
-}
-
-// AddBlock adds a new l2 block ref only if greater than the current head.
-func (b *L2Blocks) AddBlock(block eth.L2BlockRef) {
-	o := b.getOrNewOrigin(block.L1Origin.Number)
-	if o.head == nil || block.Number >= o.head.Number {
-		o.head = &block
-	}
-}
-
-// As the challenge window advances, we pop the oldest l1 block and return the last l2 block in the
-// sequencing window.
-func (b *L2Blocks) AdvanceWindow(l1Blk eth.BlockID) (*eth.L2BlockRef, bool, error) {
-	b.getOrNewOrigin(l1Blk.Number)
-	if len(b.byL1Origin) > int(b.reorgWindowSize) {
-		expNum := l1Blk.Number - b.reorgWindowSize
-		e, ok := b.byL1Origin[expNum]
-		if !ok {
-			return nil, false, fmt.Errorf("epoch not found")
-		}
-		expired := 0
-		for k, v := range e.challenges {
-			if v.status == api.ChallengeActive {
-				expired++
-				b.SetExpiredChallenge([]byte(k), expNum)
-			}
-		}
-		// we need to go back a whole sequencer window size to find the next safe head
-		if expNum > b.seqWindowSize {
-			originNum := expNum - b.seqWindowSize
-
-			// prune previous one, as past new safe head
-			if originNum > 0 {
-				delete(b.byL1Origin, originNum-1)
-			}
-
-			if origin, ok := b.byL1Origin[originNum]; ok && origin.head != nil {
-				return origin.head, expired > 0, nil
-			}
-		}
-		return nil, expired > 0, nil
-	}
-	return nil, false, fmt.Errorf("window not full")
-}
-
-// SetExpiredChallenge sets a challenge status as expired.
-func (b *L2Blocks) SetExpiredChallenge(key []byte, blockNumber uint64) {
-	b.metrics.RecordExpiredChallenge(key)
-
-	o := b.getOrNewOrigin(blockNumber)
-	o.challenges[string(key)] = challenge{status: api.ChallengeExpired}
-}
-
-// SetActiveChallenge sets the challenge status to active and the block where it was activated.
-func (b *L2Blocks) SetActiveChallenge(key []byte, blockNumber uint64, start uint64) {
-	b.metrics.RecordActiveChallenge(blockNumber, start, key)
-
-	o := b.getOrNewOrigin(blockNumber)
-	chall := o.challenges[string(key)]
-	// do not override an expired challenge
-	if chall.status == api.ChallengeResolved || chall.status == api.ChallengeExpired {
-		return
-	}
-	o.challenges[string(key)] = challenge{status: api.ChallengeActive, startBlock: start}
-}
-
-// SetResolvedChallenge sets the challenge status and the input data that resolved it.
-func (b *L2Blocks) SetResolvedChallenge(key []byte, input []byte, blockNumber uint64) {
-	b.metrics.RecordResolvedChallenge(key)
-
-	o := b.getOrNewOrigin(blockNumber)
-	o.challenges[string(key)] = challenge{status: api.ChallengeResolved, input: input}
-}
-
-// GetChallenge return the challenge state and whether it already exists.
-func (b *L2Blocks) GetChallenge(key []byte, blockNumber uint64) (challenge, bool) {
-	o := b.getOrNewOrigin(blockNumber)
-	chall, ok := o.challenges[string(key)]
-	return chall, ok
-}
-
-// GetOrTrackChallenge returns the challenge state or sets the key with a default value to track it.
-func (b *L2Blocks) GetOrTrackChallenge(key []byte, blockNumber uint64) challenge {
-	o := b.getOrNewOrigin(blockNumber)
-	_, ok := o.challenges[string(key)]
-	if !ok {
-		o.challenges[string(key)] = challenge{}
-	}
-	return o.challenges[string(key)]
-}
-
-// GetResolvedInput returns the input data that resolved the challenge.
-func (b *L2Blocks) GetResolvedInput(key []byte, blockNumber uint64) []byte {
-	if _, ok := b.byL1Origin[blockNumber]; !ok {
-		return nil
-	}
-	chall, _ := b.byL1Origin[blockNumber].challenges[string(key)]
-	return chall.input
-}
 
 // L1Fetcher is the required interface for syncing the DA challenge contract state.
 type L1Fetcher interface {
@@ -203,60 +59,82 @@ type AltDA struct {
 
 	storageClient PreImageFetcher
 	engineClient  L2Engine
+	l1Client      L1Fetcher
 
-	blocks *L2Blocks
+	state *State
 
 	// the latest l1 block we synced challenge contract events from
 	challHead eth.BlockID
+
+	safeHeadSignalFunc eth.HeadSignalFn
 }
 
-func NewAltDA(log log.Logger, cfg Config, metrics metrics.AltDAMetricer, storage PreImageFetcher, engine L2Engine) *AltDA {
-	reorgWindow := cfg.ChallengeWindow + cfg.ResolveWindow
+func NewAltDA(log log.Logger, cfg Config, metrics metrics.AltDAMetricer, storage PreImageFetcher, engine L2Engine, l1F L1Fetcher) *AltDA {
 	return &AltDA{
 		log:           log,
 		cfg:           cfg,
 		metrics:       metrics,
 		storageClient: storage,
 		engineClient:  engine,
-		blocks:        NewL2Blocks(metrics, reorgWindow, cfg.SequencerWindow),
+		l1Client:      l1F,
+		state:         NewState(log),
 	}
 }
 
-// StepChallenges continues syncing the challenges by fetching the next l1 block.
-func (a *AltDA) StepChallenges(ctx context.Context, l1 L1Fetcher) error {
-	blkRef, err := l1.L1BlockRefByNumber(ctx, a.challHead.Number+1)
+func (a *AltDA) OnSafeHeadSignal(f eth.HeadSignalFn) {
+	a.safeHeadSignalFunc = f
+}
+
+func (a *AltDA) ChallengesHead() eth.BlockID {
+	return a.challHead
+}
+
+func (a *AltDA) LoadNextChallenges(ctx context.Context) error {
+	blkRef, err := a.l1Client.L1BlockRefByNumber(ctx, a.challHead.Number+1)
 	if err != nil {
 		a.log.Error("failed to fetch l1 head", "err", err)
 		return err
 	}
-	blkId := blkRef.ID()
-	return a.UpdateChallenges(ctx, blkId, l1)
+	return a.ProcessL1Origin(ctx, blkRef.ID())
 }
 
-// AdvanceWindow advances the challenge + reorg window and returns whether we need to reorg.
-func (a *AltDA) AdvanceWindow(ctx context.Context, l1Head eth.BlockID, l1 L1Fetcher) (bool, error) {
-	safeHead, reset, _ := a.blocks.AdvanceWindow(l1Head)
-	if safeHead != nil && !reset {
-		a.log.Info("setting safe head", "safeHead", safeHead, "origin", safeHead.L1Origin.Number)
-		if err := a.engineClient.SetSafeHead(ctx, safeHead.Hash); err != nil {
-			return false, err
-		}
-	}
-	return reset, nil
+func (a *AltDA) Reset(block eth.BlockID) {
+	a.state.Prune(block.Number)
+	a.challHead = block
 }
 
-// UpdateChallenges fetches the l1 block receipts and updates the challenge status
-func (a *AltDA) UpdateChallenges(ctx context.Context, block eth.BlockID, l1 L1Fetcher) error {
-	// noop if we already processed this block
+func (a *AltDA) State() *State {
+	return a.state
+}
+
+func (a *AltDA) ProcessL1Origin(ctx context.Context, block eth.BlockID) error {
 	if block.Number <= a.challHead.Number {
 		return nil
 	}
+	if err := a.LoadChallengeEvents(ctx, block); err != nil {
+		return err
+	}
+	bn, err := a.state.ExpireChallenges(block.Number)
+	if a.safeHeadSignalFunc != nil {
+		blkRef, err := a.l1Client.L1BlockRefByNumber(ctx, bn)
+		if err != nil {
+			a.log.Error("failed to fetch l1 head", "err", err)
+			return err
+		}
+		a.safeHeadSignalFunc(ctx, blkRef)
+	}
+	a.challHead = block
+	return err
+}
+
+// LoadChallengeEvents fetches the l1 block receipts and updates the challenge status
+func (a *AltDA) LoadChallengeEvents(ctx context.Context, block eth.BlockID) error {
 	//cached with deposits events call so not expensive
-	_, receipts, err := l1.FetchReceipts(ctx, block.Hash)
+	_, receipts, err := a.l1Client.FetchReceipts(ctx, block.Hash)
 	if err != nil {
 		return err
 	}
-	a.log.Info("updating challenges", "epoch", block.Number, "reorgWindow", a.blocks.reorgWindowSize, "numReceipts", len(receipts))
+	a.log.Info("updating challenges", "epoch", block.Number, "numReceipts", len(receipts))
 	for i, rec := range receipts {
 		if rec.Status != types.ReceiptStatusSuccessful {
 			continue
@@ -271,16 +149,15 @@ func (a *AltDA) UpdateChallenges(ctx context.Context, block eth.BlockID, l1 L1Fe
 				a.log.Info("found challenge event", "block", block.Number, "tx", i, "log", j, "event", event)
 				hash := event.ChallengedHash[:]
 				bn := event.ChallengedBlockNumber.Uint64()
-				_, has := a.blocks.GetChallenge(hash, bn)
 				// if we are not tracking the commitment from processing the l1 origin in derivation, this challenge is invalid.
-				if !has {
+				if !a.state.IsTracking(hash, bn) {
 					a.log.Warn("skipping invalid challenge", "block", bn)
 					continue
 				}
 				status := api.ChallengeStatusCode(event.Status)
 				if status == api.ChallengeResolved {
 					// cached with input resolution call so not expensive
-					_, txs, err := l1.InfoAndTxsByHash(ctx, block.Hash)
+					_, txs, err := a.l1Client.InfoAndTxsByHash(ctx, block.Hash)
 					if err != nil {
 						a.log.Error("failed to fetch l1 block", "block", block.Number, "err", err)
 						continue
@@ -298,17 +175,16 @@ func (a *AltDA) UpdateChallenges(ctx context.Context, block eth.BlockID, l1 L1Fe
 					}
 					if input != nil && bytes.Equal(crypto.Keccak256(input), event.ChallengedHash[:]) {
 						a.log.Debug("resolved input", "block", block.Number, "tx", i)
-						a.blocks.SetResolvedChallenge(hash, input, bn)
+						a.state.SetResolvedChallenge(hash, input, log.BlockNumber)
 					}
 				}
 				if status == api.ChallengeActive {
-					a.blocks.SetActiveChallenge(hash, bn, log.BlockNumber)
+					a.state.SetActiveChallenge(hash, log.BlockNumber, a.cfg.ResolveWindow)
 				}
 			}
 		}
 
 	}
-	a.challHead = block
 	return nil
 }
 
@@ -317,41 +193,43 @@ func (a *AltDA) GetPreImage(ctx context.Context, key []byte, blockNumber uint64)
 	// If the challenge head is ahead in the case of a pipeline reset or stall, we might have synced a
 	// challenge event for this commitment. Otherwise we mark the commitment as part of the cannonical
 	// chain so potential future challenge events can be selected.
-	ch := a.blocks.GetOrTrackChallenge(key, blockNumber)
+	ch := a.state.GetOrTrackChallenge(key, blockNumber, a.cfg.ChallengeWindow)
 	val, err := a.storageClient.GetPreImage(ctx, key)
 	res := api.NewResponse(api.Available, val)
 	// data is not found in storage or may be available but challenge was
 	// still expired so it needs to be skipped.
-	if errors.Is(client.ErrNotFound, err) || ch.status == api.ChallengeExpired {
-		switch ch.status {
-		case api.ChallengeActive:
-			if a.isInResolveWindow(blockNumber) {
-				res.SetPendingChallenge()
-			} else {
-				res.SetExpiredChallenge()
-			}
-		case api.ChallengeExpired:
+	notFound := errors.Is(client.ErrNotFound, err)
+	switch ch.challengeStatus {
+	case api.ChallengeActive:
+		if a.isExpired(ch.expiresAt) {
 			res.SetExpiredChallenge()
-		case api.ChallengeResolved:
-			resolvedInput := a.blocks.GetResolvedInput(key, blockNumber)
-			if resolvedInput != nil {
-				res.SetResolved(resolvedInput)
-			}
-		default:
+		} else if notFound {
+			res.SetPendingChallenge()
+		}
+	case api.ChallengeExpired:
+		res.SetExpiredChallenge()
+	case api.ChallengeResolved:
+		resolvedInput, err := a.state.GetResolvedInput(key)
+		if err == nil {
+			res.SetResolved(resolvedInput)
+		}
+	default:
+		if notFound {
 			// If we can still challenge the data, set as pending a keep retrying
 			// while the challenge head steps forward.
-			if a.isInChallengeWindow(blockNumber) {
-				res.SetPendingChallenge()
-			} else {
+			if a.isExpired(ch.expiresAt) {
 				res.SetFatal()
+			} else {
+				res.SetPendingChallenge()
 			}
 		}
-
-		a.log.Error("preimage not available", "status", res.Status)
-		return res, nil
 	}
 
-	if err != nil {
+	if notFound {
+		a.log.Error("preimage not available", "status", res.Status)
+	}
+
+	if err != nil && !notFound {
 		a.log.Error("failed to get preimage", "err", err)
 		// the storage client request failed for some other reason
 		// in which case derivation pipeline should be retried
@@ -361,29 +239,8 @@ func (a *AltDA) GetPreImage(ctx context.Context, key []byte, blockNumber uint64)
 	return res, nil
 }
 
-// the DA service must keep track of every new subjective safe head
-// so as to mark the new safe head when the challenge window expires
-func (a *AltDA) SetSubjectiveSafeHead(ctx context.Context, ref eth.L2BlockRef) error {
-	a.log.Debug("setting subjective safe head", "ref", ref, "origin", ref.L1Origin)
-	a.blocks.AddBlock(ref)
-	return nil
-}
-
-// GetChallengeStatus returns the status of the challenge for the given key and block number and if it is
-// already tracked (i.e. the input data was previously requested during derivation).
-func (a *AltDA) GetChallengeStatus(key []byte, blockNumber uint64) (api.ChallengeStatusCode, bool) {
-	ch, ok := a.blocks.GetChallenge(key, blockNumber)
-	return ch.status, ok
-}
-
-// checks if the given block number is in the challenge window based on the latest challenge head.
-func (a *AltDA) isInChallengeWindow(blockNumber uint64) bool {
-	return a.challHead.Number >= blockNumber && a.challHead.Number <= blockNumber+a.cfg.ChallengeWindow
-}
-
-// checks if the given block is in the resolve window based on the latest challenge head.
-func (a *AltDA) isInResolveWindow(blockNumber uint64) bool {
-	return a.challHead.Number >= blockNumber && a.challHead.Number <= blockNumber+a.cfg.ChallengeWindow+a.cfg.ResolveWindow
+func (a *AltDA) isExpired(bn uint64) bool {
+	return a.challHead.Number >= bn
 }
 
 // DecodeChallengeStatusEvent decodes the challenge status event from the log data and the indexed challenged

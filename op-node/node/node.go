@@ -316,11 +316,9 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 			ChallengeWindow:            cfg.Rollup.DaChallengeWindowSize,
 			ResolveWindow:              cfg.Rollup.DaResolveWindowSize,
 		}
-		da := damgr.NewAltDA(n.log, daCfg, n.metrics.AltDAMetrics, storageCl, n.l2Source)
+		da := damgr.NewAltDA(n.log, daCfg, n.metrics.AltDAMetrics, storageCl, n.l2Source, n.l1Source)
 		// Swap the L1 DA source for the alt DA source that connects to the DA service
 		dataSrc = derive.NewDASourceFactory(n.log, &cfg.Rollup, n.l1Source, da)
-		// The Mod engine forwards ForkchoiceUpdated calls to the ForkchoiceUpdatedSubjective endpoint.
-		l2Source = driver.NewModEngine(n.l2Source, da, n.log)
 	} else {
 		dataSrc = derive.NewDataSourceFactory(n.log, &cfg.Rollup, n.l1Source)
 		l2Source = n.l2Source
