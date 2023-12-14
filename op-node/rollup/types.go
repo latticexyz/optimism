@@ -150,8 +150,12 @@ func (cfg *Config) TargetBlockNumber(timestamp uint64) (num uint64, err error) {
 	return cfg.Genesis.L2.Number + blocksSinceGenesis, nil
 }
 
+func (cfg *Config) AltDAEnabled() bool {
+	return cfg.DaChallengeContractAddress != (common.Address{})
+}
+
 func (cfg *Config) ReorgWindowSize() uint64 {
-	if cfg.DaChallengeContractAddress != (common.Address{}) {
+	if cfg.AltDAEnabled() {
 		return cfg.DaChallengeWindowSize + cfg.DaResolveWindowSize + cfg.SeqWindowSize
 	}
 	return cfg.SeqWindowSize

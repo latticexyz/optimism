@@ -30,11 +30,6 @@ type L1Fetcher interface {
 	L1BlockRefByNumber(context.Context, uint64) (eth.L1BlockRef, error)
 }
 
-// L2Engine is the required interface for updating the L2 engine safe head.
-type L2Engine interface {
-	SetSafeHead(ctx context.Context, safeHash common.Hash) error
-}
-
 // PreImageFetcher is the required interface for fetching inputs from the storage layer.
 type PreImageFetcher interface {
 	GetPreImage(ctx context.Context, hash []byte) ([]byte, error)
@@ -58,37 +53,42 @@ type AltDA struct {
 	metrics metrics.AltDAMetricer
 
 	storageClient PreImageFetcher
-	engineClient  L2Engine
 	l1Client      L1Fetcher
 
 	state *State
 
 	// the latest l1 block we synced challenge contract events from
-	challHead eth.BlockID
+	challHead     eth.BlockID
+	finalizedHead eth.L1BlockRef
 
-	safeHeadSignalFunc eth.HeadSignalFn
+	finalizedHeadSignalFunc eth.HeadSignalFn
 }
 
-func NewAltDA(log log.Logger, cfg Config, metrics metrics.AltDAMetricer, storage PreImageFetcher, engine L2Engine, l1F L1Fetcher) *AltDA {
+func NewAltDA(log log.Logger, cfg Config, metrics metrics.AltDAMetricer, storage PreImageFetcher, l1F L1Fetcher) *AltDA {
 	return &AltDA{
 		log:           log,
 		cfg:           cfg,
 		metrics:       metrics,
 		storageClient: storage,
-		engineClient:  engine,
 		l1Client:      l1F,
 		state:         NewState(log),
 	}
 }
 
-func (a *AltDA) OnSafeHeadSignal(f eth.HeadSignalFn) {
-	a.safeHeadSignalFunc = f
+// OnFinalizedHeadSignal sets the callback function to be called when the finalized head is updated.
+// This will signal to the engine queue that will set the proper L2 block as finalized.
+func (a *AltDA) OnFinalizedHeadSignal(f eth.HeadSignalFn) {
+	a.finalizedHeadSignalFunc = f
 }
 
+// ChallengesHead returns the latest l1 block synced from the challenge contract.
 func (a *AltDA) ChallengesHead() eth.BlockID {
 	return a.challHead
 }
 
+// LoadNextChallenges increments the challenges head and process the new block if it exists.
+// It is only used if the derivation pipeline stalls and we need to wait for a challenge to be resolved
+// to get the next input.
 func (a *AltDA) LoadNextChallenges(ctx context.Context) error {
 	blkRef, err := a.l1Client.L1BlockRefByNumber(ctx, a.challHead.Number+1)
 	if err != nil {
@@ -98,33 +98,47 @@ func (a *AltDA) LoadNextChallenges(ctx context.Context) error {
 	return a.ProcessL1Origin(ctx, blkRef.ID())
 }
 
-func (a *AltDA) Reset(block eth.BlockID) {
-	a.state.Prune(block.Number)
-	a.challHead = block
-}
-
 func (a *AltDA) State() *State {
 	return a.state
 }
 
+// ProcessL1Origin syncs any challenge events included in the l1 block, expires any active challenges
+// after the new resolveWindow, computes and signals the new finalized head and sets the l1 block
+// as the new head for tracking challenges. If forwards an error if any new challenge have expired to
+// trigger a derivation reset.
 func (a *AltDA) ProcessL1Origin(ctx context.Context, block eth.BlockID) error {
+	// do not repeat for the same origin
 	if block.Number <= a.challHead.Number {
 		return nil
 	}
+	// sync challenges for the new block
 	if err := a.LoadChallengeEvents(ctx, block); err != nil {
 		return err
 	}
+	// advance challenge window
 	bn, err := a.state.ExpireChallenges(block.Number)
-	if a.safeHeadSignalFunc != nil {
-		blkRef, err := a.l1Client.L1BlockRefByNumber(ctx, bn)
+	if err != nil {
+		return err
+	}
+
+	if bn > a.finalizedHead.Number {
+		ref, err := a.l1Client.L1BlockRefByNumber(ctx, bn)
 		if err != nil {
-			a.log.Error("failed to fetch l1 head", "err", err)
 			return err
 		}
-		a.safeHeadSignalFunc(ctx, blkRef)
+		a.finalizedHead = ref
+
+		// if we get a greater finalized head, signal to the engine queue
+		if a.finalizedHeadSignalFunc != nil {
+			a.finalizedHeadSignalFunc(ctx, a.finalizedHead)
+
+		}
+		// prune old state
+		a.state.Prune(bn)
+
 	}
 	a.challHead = block
-	return err
+	return nil
 }
 
 // LoadChallengeEvents fetches the l1 block receipts and updates the challenge status
@@ -239,6 +253,7 @@ func (a *AltDA) GetPreImage(ctx context.Context, key []byte, blockNumber uint64)
 	return res, nil
 }
 
+// isExpired returns whether the expiration block is lower or equal to the current head
 func (a *AltDA) isExpired(bn uint64) bool {
 	return a.challHead.Number >= bn
 }

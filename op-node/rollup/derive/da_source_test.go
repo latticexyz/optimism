@@ -20,23 +20,39 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
+
+type MockFinalitySignal struct {
+	mock.Mock
+}
+
+func (m *MockFinalitySignal) OnNewL1Finalized(ctx context.Context, blockRef eth.L1BlockRef) {
+	m.MethodCalled("OnNewL1Finalized", blockRef)
+}
+
+func (m *MockFinalitySignal) ExpectL1Finalized(blockRef eth.L1BlockRef) {
+	m.On("OnNewL1Finalized", blockRef).Once()
+}
 
 // TestDASource tests the logic in response to all DA service responses.
 func TestDASource(t *testing.T) {
 	logger := testlog.Logger(t, log.LvlDebug)
 	ctx := context.Background()
 	storage := daclient.NewMockClient(logger)
-	engine := &testutils.MockEngine{}
 	l1F := &testutils.MockL1Source{}
 
 	daCfg := damgr.Config{ChallengeWindow: 3, ResolveWindow: 3}
-	da := damgr.NewAltDA(logger, daCfg, &metrics.NoopAltDAMetrics{}, storage, engine, l1F)
+	da := damgr.NewAltDA(logger, daCfg, &metrics.NoopAltDAMetrics{}, storage, l1F)
 	rng := rand.New(rand.NewSource(1234))
+
+	finalitySignal := &MockFinalitySignal{}
+	da.OnFinalizedHeadSignal(finalitySignal.OnNewL1Finalized)
 
 	l1Time := uint64(2)
 	refA := testutils.RandomBlockRef(rng)
+	refA.Number = 1
 	refB := eth.L1BlockRef{
 		Hash:       testutils.RandomHash(rng),
 		Number:     refA.Number + 1,
@@ -213,14 +229,22 @@ func TestDASource(t *testing.T) {
 		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
 		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
 
-		// called for each challenge
+		// called for each l1 block to sync challenges
 		l1F.ExpectL1BlockRefByNumber(ref.Number, ref, nil)
 		l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+
+		// extra call to the same origin after reset
+		if uint64(i) == daCfg.ChallengeWindow+1 {
+			l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+		}
 	}
 
-	da.Reset(refA.ID())
 	factory := NewDASourceFactory(logger, cfg, l1F, da)
 
+	// once the challenge is expired refB is finalized as challengeWindow behind the latest l1 origin
+	finalitySignal.ExpectL1Finalized(refB)
+
+	// read all l1 origins until the challenge expires triggering a reset error
 	for i := uint64(0); i <= daCfg.ChallengeWindow+1; i++ {
 		ref := l1Refs[i]
 		if i == 1 {
@@ -232,12 +256,14 @@ func TestDASource(t *testing.T) {
 		data, err := src.Next(ctx)
 		if i == daCfg.ChallengeWindow+1 {
 			require.ErrorIs(t, err, ErrReset)
-			da.Reset(ref.ID())
 		} else {
 			require.NoError(t, err)
 			require.Equal(t, hexutil.Bytes(inputs[i]), data)
 		}
 	}
+
+	// read to the last l1 origin which finalizes refC
+	finalitySignal.ExpectL1Finalized(refC)
 
 	// Rederive and move safe head forward
 	for i, ref := range l1Refs {
@@ -246,10 +272,13 @@ func TestDASource(t *testing.T) {
 
 		data, err := src.Next(ctx)
 		if i == 0 {
+			// the first input is skipped because the challenge is expired
 			require.Equal(t, err, io.EOF)
 		} else {
 			require.NoError(t, err)
 			require.Equal(t, hexutil.Bytes(inputs[i]), data)
 		}
 	}
+
+	finalitySignal.AssertExpectations(t)
 }

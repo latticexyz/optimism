@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"context"
 	"math/big"
 	"math/rand"
 	"testing"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/sync"
+	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -55,12 +57,16 @@ func NewL2AltDA(log log.Logger, p *e2eutils.TestParams, t Testing) *L2AltDA {
 	l1F, err := sources.NewL1Client(miner.RPCClient(), log, nil, sources.L1ClientDefaultConfig(sd.RollupCfg, false, sources.RPCKindBasic))
 	require.NoError(t, err)
 
-	daMgr := damgr.NewAltDA(log, *sd.DaCfg, &metrics.NoopAltDAMetrics{}, storage, engCl, l1F)
+	daMgr := damgr.NewAltDA(log, *sd.DaCfg, &metrics.NoopAltDAMetrics{}, storage, l1F)
 
 	dataSrc := derive.NewDASourceFactory(log, sd.RollupCfg, l1F, daMgr)
 	sequencer := NewL2Sequencer(t, log, l1F, engCl, sd.RollupCfg, 0, dataSrc)
 	miner.ActL1SetFeeRecipient(common.Address{'A'})
 	sequencer.ActL2PipelineFull(t)
+
+	daMgr.OnFinalizedHeadSignal(func(ctx context.Context, ref eth.L1BlockRef) {
+		sequencer.derivation.Finalize(ref)
+	})
 
 	batcher := NewL2Batcher(log, sd.RollupCfg, &BatcherCfg{
 		MinL1TxSize: 0,
@@ -109,10 +115,15 @@ func (a *L2AltDA) NewVerifier(t Testing) *L2Verifier {
 	l1F, err := sources.NewL1Client(a.miner.RPCClient(), a.log, nil, sources.L1ClientDefaultConfig(a.sd.RollupCfg, false, sources.RPCKindBasic))
 	require.NoError(t, err)
 
-	daMgr := damgr.NewAltDA(a.log, *a.sd.DaCfg, &metrics.NoopAltDAMetrics{}, a.storage, engCl, l1F)
+	daMgr := damgr.NewAltDA(a.log, *a.sd.DaCfg, &metrics.NoopAltDAMetrics{}, a.storage, l1F)
 	dataSrc := derive.NewDASourceFactory(a.log, a.sd.RollupCfg, l1F, daMgr)
 
-	return NewL2Verifier(t, a.log, l1F, engCl, a.sd.RollupCfg, &sync.Config{}, dataSrc)
+	verifier := NewL2Verifier(t, a.log, l1F, engCl, a.sd.RollupCfg, &sync.Config{}, dataSrc)
+	daMgr.OnFinalizedHeadSignal(func(ctx context.Context, ref eth.L1BlockRef) {
+		verifier.derivation.Finalize(ref)
+	})
+
+	return verifier
 }
 
 func (a *L2AltDA) ActSequencerIncludeTx(t Testing) {
@@ -258,9 +269,9 @@ func TestAltDA_ChallengeExpired(gt *testing.T) {
 	harness.sequencer.ActL2PipelineFull(t)
 
 	// make sure that the safe head was correctly updated on the engine.
-	// l2Safe, err := harness.engCl.L2BlockRefByLabel(t.Ctx(), eth.Safe)
-	// require.NoError(t, err)
-	// require.Equal(t, uint64(11), l2Safe.Number)
+	l2Finalized, err := harness.engCl.L2BlockRefByLabel(t.Ctx(), eth.Finalized)
+	require.NoError(t, err)
+	require.Equal(t, uint64(8), l2Finalized.Number)
 
 	newBlk, err := harness.engine.EthClient().BlockByNumber(t.Ctx(), blk.Number())
 	require.NoError(t, err)
@@ -280,7 +291,7 @@ func TestAltDA_ChallengeExpired(gt *testing.T) {
 
 	verifSyncStatus := verifier.SyncStatus()
 
-	require.Equal(t, syncStatus.SafeL2, verifSyncStatus.SafeL2)
+	require.Equal(t, syncStatus.FinalizedL2, verifSyncStatus.FinalizedL2)
 }
 
 func TestAltDA_ChallengeResolved(gt *testing.T) {
