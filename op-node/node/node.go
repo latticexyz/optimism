@@ -191,8 +191,11 @@ func (n *OpNode) initL1(ctx context.Context, cfg *Config) error {
 	// which only change once per epoch at most and may be delayed.
 	n.l1SafeSub = eth.PollBlockChanges(n.resourcesCtx, n.log, n.l1Source, n.OnNewL1Safe, eth.Safe,
 		cfg.L1EpochPollInterval, time.Second*10)
-	n.l1FinalizedSub = eth.PollBlockChanges(n.resourcesCtx, n.log, n.l1Source, n.OnNewL1Finalized, eth.Finalized,
-		cfg.L1EpochPollInterval, time.Second*10)
+	// in alt DA mode the finalized signal comes from the DA manager once the input can no longer be challenged
+	if !cfg.Rollup.AltDAEnabled() {
+		n.l1FinalizedSub = eth.PollBlockChanges(n.resourcesCtx, n.log, n.l1Source, n.OnNewL1Finalized, eth.Finalized,
+			cfg.L1EpochPollInterval, time.Second*10)
+	}
 	return nil
 }
 
@@ -316,11 +319,10 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 			ChallengeWindow:            cfg.Rollup.DaChallengeWindowSize,
 			ResolveWindow:              cfg.Rollup.DaResolveWindowSize,
 		}
-		da := damgr.NewAltDA(n.log, daCfg, n.metrics.AltDAMetrics, storageCl, n.l2Source)
+		da := damgr.NewAltDA(n.log, daCfg, n.metrics.AltDAMetrics, storageCl, n.l1Source)
+		da.OnFinalizedHeadSignal(n.OnNewL1Finalized)
 		// Swap the L1 DA source for the alt DA source that connects to the DA service
 		dataSrc = derive.NewDASourceFactory(n.log, &cfg.Rollup, n.l1Source, da)
-		// The Mod engine forwards ForkchoiceUpdated calls to the ForkchoiceUpdatedSubjective endpoint.
-		l2Source = driver.NewModEngine(n.l2Source, da, n.log)
 	} else {
 		dataSrc = derive.NewDataSourceFactory(n.log, &cfg.Rollup, n.l1Source)
 		l2Source = n.l2Source

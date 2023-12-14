@@ -133,7 +133,8 @@ type EngineQueue struct {
 	unsafePayloads *PayloadsQueue // queue of unsafe payloads, ordered by ascending block number, may have gaps and duplicates
 
 	// Tracks which L2 blocks where last derived from which L1 block. At most finalityLookback large.
-	finalityData []FinalityData
+	finalityData     []FinalityData
+	finalityLookback int
 
 	engine Engine
 	prev   NextAttributesProvider
@@ -151,16 +152,21 @@ var _ EngineControl = (*EngineQueue)(nil)
 
 // NewEngineQueue creates a new EngineQueue, which should be Reset(origin) before use.
 func NewEngineQueue(log log.Logger, cfg *rollup.Config, engine Engine, metrics Metrics, prev NextAttributesProvider, l1Fetcher L1Fetcher, syncCfg *sync.Config) *EngineQueue {
+	flb := finalityLookback
+	if cfg.AltDAEnabled() {
+		flb = int(cfg.ReorgWindowSize())
+	}
 	return &EngineQueue{
-		log:            log,
-		cfg:            cfg,
-		engine:         engine,
-		metrics:        metrics,
-		finalityData:   make([]FinalityData, 0, finalityLookback),
-		unsafePayloads: NewPayloadsQueue(maxUnsafePayloadsMemory, payloadMemSize),
-		prev:           prev,
-		l1Fetcher:      l1Fetcher,
-		syncCfg:        syncCfg,
+		log:              log,
+		cfg:              cfg,
+		engine:           engine,
+		metrics:          metrics,
+		finalityData:     make([]FinalityData, 0, flb),
+		finalityLookback: flb,
+		unsafePayloads:   NewPayloadsQueue(maxUnsafePayloadsMemory, payloadMemSize),
+		prev:             prev,
+		l1Fetcher:        l1Fetcher,
+		syncCfg:          syncCfg,
 	}
 }
 
@@ -391,8 +397,8 @@ func (eq *EngineQueue) tryFinalizeL2() {
 // to finalize it once the L1 block, or later, finalizes.
 func (eq *EngineQueue) postProcessSafeL2() {
 	// prune finality data if necessary
-	if len(eq.finalityData) >= finalityLookback {
-		eq.finalityData = append(eq.finalityData[:0], eq.finalityData[1:finalityLookback]...)
+	if len(eq.finalityData) >= eq.finalityLookback {
+		eq.finalityData = append(eq.finalityData[:0], eq.finalityData[1:eq.finalityLookback]...)
 	}
 	// remember the last L2 block that we fully derived from the given finality data
 	if len(eq.finalityData) == 0 || eq.finalityData[len(eq.finalityData)-1].L1Block.Number < eq.origin.Number {

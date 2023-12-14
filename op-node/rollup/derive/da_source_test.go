@@ -7,8 +7,8 @@ import (
 	"math/rand"
 	"testing"
 
-	daapi "github.com/ethereum-optimism/optimism/alt-da/api"
 	daclient "github.com/ethereum-optimism/optimism/alt-da/client"
+	"github.com/ethereum-optimism/optimism/alt-da/metrics"
 	damgr "github.com/ethereum-optimism/optimism/alt-da/mgr"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
@@ -20,23 +20,39 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
+type MockFinalitySignal struct {
+	mock.Mock
+}
+
+func (m *MockFinalitySignal) OnNewL1Finalized(ctx context.Context, blockRef eth.L1BlockRef) {
+	m.MethodCalled("OnNewL1Finalized", blockRef)
+}
+
+func (m *MockFinalitySignal) ExpectL1Finalized(blockRef eth.L1BlockRef) {
+	m.On("OnNewL1Finalized", blockRef).Once()
+}
+
 // TestDASource tests the logic in response to all DA service responses.
 func TestDASource(t *testing.T) {
-	logger := testlog.Logger(t, log.LvlCrit)
+	logger := testlog.Logger(t, log.LvlDebug)
 	ctx := context.Background()
 	storage := daclient.NewMockClient(logger)
-	engine := &testutils.MockEngine{}
 	l1F := &testutils.MockL1Source{}
 
-	daCfg := damgr.Config{ChallengeWindow: 4}
-	da := damgr.NewAltDA(logger, daCfg, storage, engine)
+	daCfg := damgr.Config{ChallengeWindow: 3, ResolveWindow: 3}
+	da := damgr.NewAltDA(logger, daCfg, &metrics.NoopAltDAMetrics{}, storage, l1F)
 	rng := rand.New(rand.NewSource(1234))
+
+	finalitySignal := &MockFinalitySignal{}
+	da.OnFinalizedHeadSignal(finalitySignal.OnNewL1Finalized)
 
 	l1Time := uint64(2)
 	refA := testutils.RandomBlockRef(rng)
+	refA.Number = 1
 	refB := eth.L1BlockRef{
 		Hash:       testutils.RandomHash(rng),
 		Number:     refA.Number + 1,
@@ -212,79 +228,57 @@ func TestDASource(t *testing.T) {
 		// called once per derivation
 		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
 		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
-		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
+
+		// called for each l1 block to sync challenges
+		l1F.ExpectL1BlockRefByNumber(ref.Number, ref, nil)
+		l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+
+		// extra call to the same origin after reset
+		if uint64(i) == daCfg.ChallengeWindow+1 {
+			l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+		}
 	}
-
-	engine.ExpectSetSafeHead(refA1.Hash, nil)
-
-	// Set active challenges
-	da.SetChallengeStatus(comms[0], refA.Number, daapi.ChallengeActive)
-	da.SetChallengeStatus(comms[1], refB.Number, daapi.ChallengeActive)
 
 	factory := NewDASourceFactory(logger, cfg, l1F, da)
 
-	for i := uint64(0); i <= daCfg.ChallengeWindow; i++ {
+	// once the challenge is expired refB is finalized as challengeWindow behind the latest l1 origin
+	finalitySignal.ExpectL1Finalized(refB)
+
+	// read all l1 origins until the challenge expires triggering a reset error
+	for i := uint64(0); i <= daCfg.ChallengeWindow+1; i++ {
 		ref := l1Refs[i]
+		if i == 1 {
+			da.State().SetActiveChallenge(comms[0], ref.Number, daCfg.ResolveWindow)
+		}
+
 		src := factory.OpenData(ctx, ref.ID(), batcherAddr)
 
 		data, err := src.Next(ctx)
-		if uint64(i) == daCfg.ChallengeWindow {
-			require.ErrorIs(t, ErrReset, err)
+		if i == daCfg.ChallengeWindow+1 {
+			require.ErrorIs(t, err, ErrReset)
 		} else {
 			require.NoError(t, err)
 			require.Equal(t, hexutil.Bytes(inputs[i]), data)
 		}
-
-		for j := i * 2; j < i*2+2; j++ {
-			t.Log("setting safe head", j, l2Refs[j].Hash)
-			da.SetSubjectiveSafeHead(ctx, l2Refs[j])
-		}
-
 	}
-	engine.ExpectSetSafeHead(refA1.Hash, nil)
-	engine.ExpectSetSafeHead(refB1.Hash, nil)
+
+	// read to the last l1 origin which finalizes refC
+	finalitySignal.ExpectL1Finalized(refC)
 
 	// Rederive and move safe head forward
 	for i, ref := range l1Refs {
 		src := factory.OpenData(ctx, ref.ID(), batcherAddr)
+		t.Log("processing ref", ref.ID(), i)
 
 		data, err := src.Next(ctx)
 		if i == 0 {
-			require.Equal(t, io.EOF, err)
-		} else if uint64(i) == daCfg.ChallengeWindow+1 {
-			require.ErrorIs(t, ErrReset, err)
+			// the first input is skipped because the challenge is expired
+			require.Equal(t, err, io.EOF)
 		} else {
 			require.NoError(t, err)
 			require.Equal(t, hexutil.Bytes(inputs[i]), data)
 		}
-
-		for j := i * 2; j < i*2+2; j++ {
-			t.Log("setting safe head", j, l2Refs[j].Hash)
-			da.SetSubjectiveSafeHead(ctx, l2Refs[j])
-		}
-
 	}
 
-	engine.ExpectSetSafeHead(refB1.Hash, nil)
-	// Rederive again starting from refB
-	for i := 1; i < len(l1Refs); i++ {
-		ref := l1Refs[i]
-		src := factory.OpenData(ctx, ref.ID(), batcherAddr)
-
-		data, err := src.Next(ctx)
-		if i == 1 {
-			require.Equal(t, io.EOF, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, hexutil.Bytes(inputs[i]), data)
-		}
-
-		for j := i * 2; j < i*2+2; j++ {
-			t.Log("setting safe head", j, l2Refs[j].Hash)
-			da.SetSubjectiveSafeHead(ctx, l2Refs[j])
-		}
-
-	}
-
-	engine.AssertExpectations(t)
+	finalitySignal.AssertExpectations(t)
 }
