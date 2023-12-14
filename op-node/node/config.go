@@ -146,5 +146,8 @@ func (cfg *Config) Check() error {
 	if !(cfg.RollupHalt == "" || cfg.RollupHalt == "major" || cfg.RollupHalt == "minor" || cfg.RollupHalt == "patch") {
 		return fmt.Errorf("invalid rollup halting option: %q", cfg.RollupHalt)
 	}
+	if err := cfg.AltDA.Check(); err != nil {
+		return fmt.Errorf("alt-da config error: %w", err)
+	}
 	return nil
 }

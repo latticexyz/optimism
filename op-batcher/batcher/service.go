@@ -109,7 +109,9 @@ func (bs *BatcherService) initFromCLIConfig(ctx context.Context, version string,
 		return fmt.Errorf("failed to start pprof server: %w", err)
 	}
 	// init before driver
-	bs.initAltDA(cfg)
+	if err := bs.initAltDA(cfg); err != nil {
+		return fmt.Errorf("failed to init AltDA: %w", err)
+	}
 	bs.initDriver()
 	if err := bs.initRPCServer(cfg); err != nil {
 		return fmt.Errorf("failed to start RPC server: %w", err)
@@ -262,11 +264,15 @@ func (bs *BatcherService) initRPCServer(cfg *CLIConfig) error {
 	return nil
 }
 
-func (bs *BatcherService) initAltDA(cfg *CLIConfig) {
-	config := cfg.AltDA.Config()
+func (bs *BatcherService) initAltDA(cfg *CLIConfig) error {
+	config := cfg.AltDA.Config(bs.RollupConfig.AltDAEnabled())
+	if err := config.Check(); err != nil {
+		return err
+	}
 	if config.Enabled {
 		bs.AltDA = altda.New(bs.Log, bs.Metrics, config.URL)
 	}
+	return nil
 }
 
 // Start runs once upon start of the batcher lifecycle,
