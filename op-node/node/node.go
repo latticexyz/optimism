@@ -310,7 +310,6 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 		return err
 	}
 
-	var l2Source driver.L2Chain
 	var dataSrc derive.DataAvailabilitySource
 	if cfg.AltDA.Enabled {
 		storageCl := daclient.New(n.log, n.metrics.AltDAMetrics, cfg.AltDA.URL)
@@ -323,12 +322,12 @@ func (n *OpNode) initL2(ctx context.Context, cfg *Config, snapshotLog log.Logger
 		da.OnFinalizedHeadSignal(n.OnNewL1Finalized)
 		// Swap the L1 DA source for the alt DA source that connects to the DA service
 		dataSrc = derive.NewDASourceFactory(n.log, &cfg.Rollup, n.l1Source, da)
+		n.log.Info("Alt DA source enabled")
 	} else {
 		dataSrc = derive.NewDataSourceFactory(n.log, &cfg.Rollup, n.l1Source)
-		l2Source = n.l2Source
 	}
 
-	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, l2Source, n.l1Source, n, dataSrc, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
+	n.l2Driver = driver.NewDriver(&cfg.Driver, &cfg.Rollup, n.l2Source, n.l1Source, n, dataSrc, n, n.log, snapshotLog, n.metrics, cfg.ConfigPersistence, &cfg.Sync)
 
 	return nil
 }
