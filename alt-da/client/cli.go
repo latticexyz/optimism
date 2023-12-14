@@ -1,6 +1,9 @@
 package client
 
 import (
+	"fmt"
+	"net/url"
+
 	opservice "github.com/ethereum-optimism/optimism/op-service"
 	"github.com/urfave/cli/v2"
 )
@@ -22,13 +25,25 @@ type Config struct {
 	URL     string
 }
 
+func (c Config) Check() error {
+	if c.Enabled {
+		if c.URL == "" {
+			return fmt.Errorf("DA server URL is required when AltDA is enabled")
+		}
+		if _, err := url.Parse(c.URL); err != nil {
+			return fmt.Errorf("DA server URL is invalid: %w", err)
+		}
+	}
+	return nil
+}
+
 type CLIConfig struct {
 	DAServer string
 }
 
-func (c *CLIConfig) Config() Config {
+func (c *CLIConfig) Config(enabled bool) Config {
 	return Config{
-		Enabled: c.DAServer != "",
+		Enabled: enabled,
 		URL:     c.DAServer,
 	}
 }

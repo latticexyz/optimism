@@ -73,11 +73,7 @@ func NewConfig(ctx *cli.Context, log log.Logger) (*node.Config, error) {
 	}
 
 	altDa := altda.ReadCLIConfig(ctx)
-	altDaConfig := altDa.Config()
-
-	if altDaConfig.Enabled {
-		driverConfig.AltDAEnabled = true
-	}
+	altDaConfig := altDa.Config(rollupConfig.AltDAEnabled())
 
 	cfg := &node.Config{
 		L1:     l1Endpoint,
