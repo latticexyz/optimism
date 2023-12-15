@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ethereum-optimism/optimism/alt-da/api"
+	"github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -52,13 +53,15 @@ type State struct {
 	comms       CommQueue
 	commsByHash map[string]*Commitment
 	log         log.Logger
+	metrics     metrics.AltDAMetricer
 }
 
-func NewState(log log.Logger) *State {
+func NewState(log log.Logger, m metrics.AltDAMetricer) *State {
 	return &State{
 		comms:       make(CommQueue, 0),
 		commsByHash: make(map[string]*Commitment),
 		log:         log,
+		metrics:     m,
 	}
 }
 
@@ -76,6 +79,7 @@ func (s *State) SetActiveChallenge(comm []byte, challengedAt uint64, resolveWind
 	if c, ok := s.commsByHash[string(comm)]; ok {
 		c.expiresAt = challengedAt + resolveWindow
 		c.challengeStatus = api.ChallengeActive
+		s.metrics.RecordActiveChallenge(c.blockNumber, challengedAt, comm)
 	}
 }
 
@@ -87,6 +91,7 @@ func (s *State) SetResolvedChallenge(comm []byte, input []byte, resolvedAt uint6
 		c.challengeStatus = api.ChallengeResolved
 		c.expiresAt = resolvedAt
 		c.input = input
+		s.metrics.RecordResolvedChallenge(comm)
 	}
 }
 
@@ -135,6 +140,7 @@ func (s *State) ExpireChallenges(bn uint64) (uint64, error) {
 
 			if c.challengeStatus == api.ChallengeActive {
 				c.challengeStatus = api.ChallengeExpired
+				s.metrics.RecordExpiredChallenge(c.hash)
 				err = ErrChallengeExpired
 			}
 		} else {

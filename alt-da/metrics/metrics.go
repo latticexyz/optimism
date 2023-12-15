@@ -9,11 +9,13 @@ type AltDAMetricer interface {
 	RecordActiveChallenge(commBlock uint64, startBlock uint64, hash []byte)
 	RecordResolvedChallenge(hash []byte)
 	RecordExpiredChallenge(hash []byte)
+	RecordChallengesHead(name string, num uint64)
 	RecordStorageError()
 }
 
 type AltDAMetrics struct {
 	ChallengesStatus *prometheus.GaugeVec
+	ChallengesHead   *prometheus.GaugeVec
 
 	StorageErrors *metrics.Event
 }
@@ -27,6 +29,11 @@ func MakeAltDAMetrics(ns string, factory metrics.Factory) *AltDAMetrics {
 			Name:      "challenges_status",
 			Help:      "Gauge representing the status of challenges synced",
 		}, []string{"status"}),
+		ChallengesHead: factory.NewGaugeVec(prometheus.GaugeOpts{
+			Namespace: ns,
+			Name:      "challenges_head",
+			Help:      "Gauge representing the l1 heads of challenges synced",
+		}, []string{"type"}),
 		StorageErrors: metrics.NewEvent(factory, ns, "", "storage_errors", "errors when fetching or uploading to storage service"),
 	}
 }
@@ -53,9 +60,14 @@ func (m *AltDAMetrics) RecordStorageError() {
 	m.StorageErrors.Record()
 }
 
+func (m *AltDAMetrics) RecordChallengesHead(name string, num uint64) {
+	m.ChallengesHead.WithLabelValues(name).Set(float64(num))
+}
+
 type NoopAltDAMetrics struct{}
 
 func (m *NoopAltDAMetrics) RecordActiveChallenge(commBlock uint64, startBlock uint64, hash []byte) {}
 func (m *NoopAltDAMetrics) RecordResolvedChallenge(hash []byte)                                    {}
 func (m *NoopAltDAMetrics) RecordExpiredChallenge(hash []byte)                                     {}
+func (m *NoopAltDAMetrics) RecordChallengesHead(name string, num uint64)                           {}
 func (m *NoopAltDAMetrics) RecordStorageError()                                                    {}
