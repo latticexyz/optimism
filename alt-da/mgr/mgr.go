@@ -71,7 +71,7 @@ func NewAltDA(log log.Logger, cfg Config, metrics metrics.AltDAMetricer, storage
 		metrics:       metrics,
 		storageClient: storage,
 		l1Client:      l1F,
-		state:         NewState(log),
+		state:         NewState(log, metrics),
 	}
 }
 
@@ -117,6 +117,7 @@ func (a *AltDA) ProcessL1Origin(ctx context.Context, block eth.BlockID) error {
 	}
 	// advance challenge window
 	bn, err := a.state.ExpireChallenges(block.Number)
+	a.metrics.RecordChallengesHead("finalized", a.challHead.Number)
 	if err != nil {
 		return err
 	}
@@ -138,6 +139,7 @@ func (a *AltDA) ProcessL1Origin(ctx context.Context, block eth.BlockID) error {
 
 	}
 	a.challHead = block
+	a.metrics.RecordChallengesHead("latest", a.challHead.Number)
 	return nil
 }
 

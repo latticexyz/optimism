@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum-optimism/optimism/op-service/testutils"
 	"github.com/ethereum/go-ethereum/log"
@@ -14,7 +15,7 @@ func TestDAChallengeState(t *testing.T) {
 	logger := testlog.Logger(t, log.LvlDebug)
 
 	rng := rand.New(rand.NewSource(1234))
-	state := NewState(logger)
+	state := NewState(logger, &metrics.NoopAltDAMetrics{})
 
 	i := uint64(1)
 
