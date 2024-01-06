@@ -111,13 +111,12 @@ func (a *AltDA) ProcessL1Origin(ctx context.Context, block eth.BlockID) error {
 	if block.Number <= a.challHead.Number {
 		return nil
 	}
-	// sync challenges for the new block
+	// sync challenges for the given block ID
 	if err := a.LoadChallengeEvents(ctx, block); err != nil {
 		return err
 	}
 	// advance challenge window
 	bn, err := a.state.ExpireChallenges(block.Number)
-	a.metrics.RecordChallengesHead("finalized", a.challHead.Number)
 	if err != nil {
 		return err
 	}
@@ -127,19 +126,22 @@ func (a *AltDA) ProcessL1Origin(ctx context.Context, block eth.BlockID) error {
 		if err != nil {
 			return err
 		}
-		a.finalizedHead = ref
+		a.metrics.RecordChallengesHead("finalized", bn)
 
 		// if we get a greater finalized head, signal to the engine queue
 		if a.finalizedHeadSignalFunc != nil {
-			a.finalizedHeadSignalFunc(ctx, a.finalizedHead)
+			a.finalizedHeadSignalFunc(ctx, ref)
 
 		}
 		// prune old state
 		a.state.Prune(bn)
+		a.finalizedHead = ref
 
 	}
 	a.challHead = block
 	a.metrics.RecordChallengesHead("latest", a.challHead.Number)
+
+	a.log.Info("processed challenges l1 origin", "latest", block, "calc-finalized", bn, "finalized", a.finalizedHead.Number)
 	return nil
 }
 

@@ -35,6 +35,7 @@ func TestDAChallengeState(t *testing.T) {
 	// track the next commitment and mark it as challenged
 	c := testutils.RandomData(rng, 32)
 	state.SetInputCommitment(c, i, challengeWindow)
+	// i+4 is the block at which it was challenged
 	state.SetActiveChallenge(c, i+4, resolveWindow)
 
 	for j := i + 1; j < i+8; j++ {

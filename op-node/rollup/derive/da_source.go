@@ -65,13 +65,12 @@ func NewDASource(log log.Logger, l1 damgr.L1Fetcher, src DataIter, da DAFetcher,
 }
 
 func (s *DASource) Next(ctx context.Context) (eth.Data, error) {
-	if s.da.ChallengesHead().Number < s.id.Number {
-		if err := s.da.ProcessL1Origin(ctx, s.id); err != nil {
-			if errors.Is(err, damgr.ErrChallengeExpired) {
-				return nil, NewResetError(fmt.Errorf("new expired challenge"))
-			}
-			return nil, err
+	// ProcessL1Origin checks if any new challenges have expired and resets the pipeline to rederived without the expired inputs.
+	if err := s.da.ProcessL1Origin(ctx, s.id); err != nil {
+		if errors.Is(err, damgr.ErrChallengeExpired) {
+			return nil, NewResetError(fmt.Errorf("new expired challenge"))
 		}
+		return nil, err
 	}
 	if s.comm == nil {
 		var err error
