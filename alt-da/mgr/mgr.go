@@ -158,7 +158,6 @@ func (a *AltDA) LoadChallengeEvents(ctx context.Context, block eth.BlockID) erro
 			continue
 		}
 		for j, log := range rec.Logs {
-			a.log.Debug("checking log", "address", log.Address, "cfg", a.cfg.DaChallengeContractAddress, "topics", log.Topics)
 			if log.Address == a.cfg.DaChallengeContractAddress && len(log.Topics) > 0 && log.Topics[0] == ChallengeStatusEventABIHash {
 				event, err := DecodeChallengeStatusEvent(log)
 				if err != nil {
