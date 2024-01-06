@@ -43,7 +43,7 @@ func TestDASource(t *testing.T) {
 	storage := daclient.NewMockClient(logger)
 	l1F := &testutils.MockL1Source{}
 
-	daCfg := damgr.Config{ChallengeWindow: 3, ResolveWindow: 3}
+	daCfg := damgr.Config{ChallengeWindow: 90, ResolveWindow: 90}
 	da := damgr.NewAltDA(logger, daCfg, &metrics.NoopAltDAMetrics{}, storage, l1F)
 	rng := rand.New(rand.NewSource(1234))
 
@@ -53,37 +53,7 @@ func TestDASource(t *testing.T) {
 	l1Time := uint64(2)
 	refA := testutils.RandomBlockRef(rng)
 	refA.Number = 1
-	refB := eth.L1BlockRef{
-		Hash:       testutils.RandomHash(rng),
-		Number:     refA.Number + 1,
-		ParentHash: refA.Hash,
-		Time:       refA.Time + l1Time,
-	}
-	refC := eth.L1BlockRef{
-		Hash:       testutils.RandomHash(rng),
-		Number:     refB.Number + 1,
-		ParentHash: refB.Hash,
-		Time:       refB.Time + l1Time,
-	}
-	refD := eth.L1BlockRef{
-		Hash:       testutils.RandomHash(rng),
-		Number:     refC.Number + 1,
-		ParentHash: refC.Hash,
-		Time:       refC.Time + l1Time,
-	}
-	refE := eth.L1BlockRef{
-		Hash:       testutils.RandomHash(rng),
-		Number:     refD.Number + 1,
-		ParentHash: refD.Hash,
-		Time:       refD.Time + l1Time,
-	}
-	refF := eth.L1BlockRef{
-		Hash:       testutils.RandomHash(rng),
-		Number:     refE.Number + 1,
-		ParentHash: refE.Hash,
-		Time:       refE.Time + l1Time,
-	}
-	l1Refs := []eth.L1BlockRef{refA, refB, refC, refD, refE, refF}
+	l1Refs := []eth.L1BlockRef{refA}
 
 	refA0 := eth.L2BlockRef{
 		Hash:           testutils.RandomHash(rng),
@@ -103,182 +73,141 @@ func TestDASource(t *testing.T) {
 			L2Time: refA0.Time,
 		},
 		BlockTime:         1,
-		SeqWindowSize:     2,
+		SeqWindowSize:     20,
 		BatchInboxAddress: batcherInbox,
 	}
-	refA1 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refA0.Number + 1,
-		ParentHash:     refA0.Hash,
-		Time:           refA0.Time + cfg.BlockTime,
-		L1Origin:       refA.ID(),
-		SequenceNumber: 1,
-	}
-	refB0 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refA1.Number + 1,
-		ParentHash:     refA1.Hash,
-		Time:           refA1.Time + cfg.BlockTime,
-		L1Origin:       refB.ID(),
-		SequenceNumber: 0,
-	}
-	refB1 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refB0.Number + 1,
-		ParentHash:     refB0.Hash,
-		Time:           refB0.Time + cfg.BlockTime,
-		L1Origin:       refB.ID(),
-		SequenceNumber: 1,
-	}
-	refC0 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refB1.Number + 1,
-		ParentHash:     refB1.Hash,
-		Time:           refB1.Time + cfg.BlockTime,
-		L1Origin:       refC.ID(),
-		SequenceNumber: 0,
-	}
-	refC1 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refC0.Number + 1,
-		ParentHash:     refC0.Hash,
-		Time:           refC0.Time + cfg.BlockTime,
-		L1Origin:       refC.ID(),
-		SequenceNumber: 1,
-	}
-	refD0 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refC1.Number + 1,
-		ParentHash:     refC1.Hash,
-		Time:           refC1.Time + cfg.BlockTime,
-		L1Origin:       refD.ID(),
-		SequenceNumber: 0,
-	}
-	refD1 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refD0.Number + 1,
-		ParentHash:     refD0.Hash,
-		Time:           refD0.Time + cfg.BlockTime,
-		L1Origin:       refD.ID(),
-		SequenceNumber: 1,
-	}
-	refE0 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refD1.Number + 1,
-		ParentHash:     refD1.Hash,
-		Time:           refD1.Time + cfg.BlockTime,
-		L1Origin:       refE.ID(),
-		SequenceNumber: 0,
-	}
-	refE1 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refE0.Number + 1,
-		ParentHash:     refE0.Hash,
-		Time:           refE0.Time + cfg.BlockTime,
-		L1Origin:       refE.ID(),
-		SequenceNumber: 1,
-	}
-	refF0 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refE1.Number + 1,
-		ParentHash:     refE1.Hash,
-		Time:           refE1.Time + cfg.BlockTime,
-		L1Origin:       refF.ID(),
-		SequenceNumber: 0,
-	}
-	refF1 := eth.L2BlockRef{
-		Hash:           testutils.RandomHash(rng),
-		Number:         refF0.Number + 1,
-		ParentHash:     refF0.Hash,
-		Time:           refF0.Time + cfg.BlockTime,
-		L1Origin:       refF.ID(),
-		SequenceNumber: 1,
-	}
-	l2Refs := []eth.L2BlockRef{refA0, refA1, refB0, refB1, refC0, refC1, refD0, refD1, refE0, refE1, refF0, refF1}
 
-	for i, ref := range l2Refs {
-		t.Log("block", i, "hash", ref.Hash)
-	}
-
-	inputs := make([][]byte, len(l1Refs))
-	comms := make([][]byte, len(l1Refs))
+	var inputs [][]byte
+	var comms [][]byte
 
 	signer := cfg.L1Signer()
+	factory := NewDASourceFactory(logger, cfg, l1F, da)
 
-	for i, ref := range l1Refs {
-		input := testutils.RandomData(rng, 2000)
-		inputs[i] = input
-		comm, _ := storage.SetPreImage(ctx, input)
-		comms[i] = comm
-		t.Log("block", i, "hash", comm)
+	c := 0
 
-		tx, err := types.SignNewTx(batcherPriv, signer, &types.DynamicFeeTx{
-			ChainID:   signer.ChainID(),
-			Nonce:     0,
-			GasTipCap: big.NewInt(2 * params.GWei),
-			GasFeeCap: big.NewInt(30 * params.GWei),
-			Gas:       100_000,
-			To:        &batcherInbox,
-			Value:     big.NewInt(int64(0)),
-			Data:      comm,
-		})
-		require.NoError(t, err)
-
-		txs := []*types.Transaction{tx}
-		// called once per derivation
-		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
-		l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
-
+	for i := uint64(0); i <= daCfg.ChallengeWindow+daCfg.ResolveWindow; i++ {
+		parent := l1Refs[len(l1Refs)-1]
+		// create a new mock l1 ref
+		ref := eth.L1BlockRef{
+			Hash:       testutils.RandomHash(rng),
+			Number:     parent.Number + 1,
+			ParentHash: parent.Hash,
+			Time:       parent.Time + l1Time,
+		}
+		l1Refs = append(l1Refs, ref)
+		logger.Info("new l1 block", "ref", ref)
 		// called for each l1 block to sync challenges
 		l1F.ExpectL1BlockRefByNumber(ref.Number, ref, nil)
 		l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
 
-		// extra call to the same origin after reset
-		if uint64(i) == daCfg.ChallengeWindow+1 {
-			l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
-		}
-	}
+		// add an input commitment every 6 l1 blocks
+		hasComm := i%6 == 0
+		if hasComm {
+			input := testutils.RandomData(rng, 2000)
+			comm, _ := storage.SetPreImage(ctx, input)
+			inputs = append(inputs, input)
+			comms = append(comms, comm)
 
-	factory := NewDASourceFactory(logger, cfg, l1F, da)
+			logger.Info("submitting batch", "comm", comm, "block", ref.Number)
+			tx, err := types.SignNewTx(batcherPriv, signer, &types.DynamicFeeTx{
+				ChainID:   signer.ChainID(),
+				Nonce:     0,
+				GasTipCap: big.NewInt(2 * params.GWei),
+				GasFeeCap: big.NewInt(30 * params.GWei),
+				Gas:       100_000,
+				To:        &batcherInbox,
+				Value:     big.NewInt(int64(0)),
+				Data:      comm,
+			})
+			require.NoError(t, err)
 
-	// once the challenge is expired refB is finalized as challengeWindow behind the latest l1 origin
-	finalitySignal.ExpectL1Finalized(refB)
+			txs := []*types.Transaction{tx}
+			// called once per derivation
+			l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
+			l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), txs, nil)
 
-	// read all l1 origins until the challenge expires triggering a reset error
-	for i := uint64(0); i <= daCfg.ChallengeWindow+1; i++ {
-		ref := l1Refs[i]
-		if i == 1 {
-			da.State().SetActiveChallenge(comms[0], ref.Number, daCfg.ResolveWindow)
+			finalitySignal.ExpectL1Finalized(ref)
+		} else {
+			l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), []*types.Transaction{}, nil)
+			l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), []*types.Transaction{}, nil)
+			// challenge the first 4 commitments as soon as we have collected them all
+			if len(comms) >= 4 && c < 7 {
+				// skip a block between each challenge transaction
+				if c%2 == 0 {
+					da.State().SetActiveChallenge(comms[c/2], ref.Number, daCfg.ResolveWindow)
+					logger.Info("setting active challenge", "comm", comms[c/2])
+				}
+				c++
+			}
 		}
 
 		src := factory.OpenData(ctx, ref.ID(), batcherAddr)
-
 		data, err := src.Next(ctx)
-		if i == daCfg.ChallengeWindow+1 {
+		// our first challenge expires
+		if i == daCfg.ResolveWindow+19 {
 			require.ErrorIs(t, err, ErrReset)
+			break
+		}
+		if !hasComm {
+			require.ErrorIs(t, err, io.EOF)
 		} else {
+			// check that each commitment is resolved
 			require.NoError(t, err)
-			require.Equal(t, hexutil.Bytes(inputs[i]), data)
+			require.Equal(t, hexutil.Bytes(inputs[len(inputs)-1]), data)
 		}
 	}
 
-	// read to the last l1 origin which finalizes refC
-	finalitySignal.ExpectL1Finalized(refC)
+	logger.Info("pipeline reset ..................................")
 
-	// Rederive and move safe head forward
-	for i, ref := range l1Refs {
+	c = 1
+
+	// restart derivation from the last finalized head
+	for i := 1; i < len(l1Refs)+2; i++ {
+
+		var ref eth.L1BlockRef
+		// first we run through all the existing l1 blocks
+		if i < len(l1Refs) {
+			ref = l1Refs[i]
+			logger.Info("re deriving block", "ref", ref, "i", i)
+
+			if i == len(l1Refs)-1 {
+				l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+			}
+			// once past the l1 head, continue generating new l1 refs
+		} else {
+			parent := l1Refs[len(l1Refs)-1]
+			ref = eth.L1BlockRef{
+				Hash:       testutils.RandomHash(rng),
+				Number:     parent.Number + 1,
+				ParentHash: parent.Hash,
+				Time:       parent.Time + l1Time,
+			}
+			l1Refs = append(l1Refs, ref)
+			logger.Info("new l1 block", "ref", ref)
+			// called for each l1 block to sync challenges
+			l1F.ExpectL1BlockRefByNumber(ref.Number, ref, nil)
+			l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+
+			l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), []*types.Transaction{}, nil)
+			l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), []*types.Transaction{}, nil)
+		}
+
 		src := factory.OpenData(ctx, ref.ID(), batcherAddr)
-		t.Log("processing ref", ref.ID(), i)
-
 		data, err := src.Next(ctx)
-		if i == 0 {
-			// the first input is skipped because the challenge is expired
-			require.Equal(t, err, io.EOF)
+
+		// the next challenge expires
+		if uint64(i) == daCfg.ResolveWindow+22 {
+			require.ErrorIs(t, err, ErrReset)
+			break
+		}
+
+		hasComm := (i-1)%6 == 0 && i != 1
+		if !hasComm {
+			require.ErrorIs(t, err, io.EOF)
 		} else {
 			require.NoError(t, err)
-			require.Equal(t, hexutil.Bytes(inputs[i]), data)
+			require.Equal(t, hexutil.Bytes(inputs[c]), data)
+			c++
 		}
 	}
-
-	finalitySignal.AssertExpectations(t)
 }
