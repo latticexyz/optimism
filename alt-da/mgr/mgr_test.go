@@ -4,6 +4,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/ethereum-optimism/optimism/alt-da/api"
 	"github.com/ethereum-optimism/optimism/alt-da/metrics"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 	"github.com/ethereum-optimism/optimism/op-service/testutils"
@@ -91,4 +92,90 @@ func TestDAChallengeState(t *testing.T) {
 	storedInput, err := state.GetResolvedInput(c)
 	require.NoError(t, err)
 	require.Equal(t, input, storedInput)
+}
+
+func TestExpireChallenges(t *testing.T) {
+	logger := testlog.Logger(t, log.LvlDebug)
+
+	rng := rand.New(rand.NewSource(1234))
+	state := NewState(logger, &metrics.NoopAltDAMetrics{})
+
+	comms := make(map[uint64][]byte)
+
+	i := uint64(3713854)
+
+	var finalized uint64
+
+	challengeWindow := uint64(90)
+	resolveWindow := uint64(90)
+
+	for ; i < 3713948; i += 6 {
+		comm := testutils.RandomData(rng, 32)
+		comms[i] = comm
+		logger.Info("set commitment", "block", i)
+		cm := state.GetOrTrackChallenge(comm, i, challengeWindow)
+		require.NotNil(t, cm)
+
+		bn, err := state.ExpireChallenges(i)
+		logger.Info("expire challenges", "expired", bn, "err", err)
+
+		if bn > finalized {
+			finalized = bn
+			state.Prune(bn)
+		}
+	}
+
+	state.SetActiveChallenge(comms[3713926], 3713948, resolveWindow)
+
+	state.SetActiveChallenge(comms[3713932], 3713950, resolveWindow)
+
+	for ; i < 3714038; i += 6 {
+		comm := testutils.RandomData(rng, 32)
+		comms[i] = comm
+		logger.Info("set commitment", "block", i)
+		cm := state.GetOrTrackChallenge(comm, i, challengeWindow)
+		require.NotNil(t, cm)
+
+		bn, err := state.ExpireChallenges(i)
+		logger.Info("expire challenges", "expired", bn, "err", err)
+
+		if bn > finalized {
+			finalized = bn
+			state.Prune(bn)
+		}
+
+	}
+
+	bn, err := state.ExpireChallenges(3714034)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3713920), bn)
+
+	bn, err = state.ExpireChallenges(3714035)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3713920), bn)
+
+	bn, err = state.ExpireChallenges(3714036)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3713920), bn)
+
+	bn, err = state.ExpireChallenges(3714037)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3713920), bn)
+
+	bn, err = state.ExpireChallenges(3714038)
+	require.ErrorIs(t, err, ErrChallengeExpired)
+
+	for i := uint64(3713854); i < 3714044; i += 6 {
+		cm := state.GetOrTrackChallenge(comms[i], i, challengeWindow)
+		require.NotNil(t, cm)
+
+		if i == 3713926 {
+			require.Equal(t, api.ChallengeExpired, cm.challengeStatus)
+		}
+	}
+
+	bn, err = state.ExpireChallenges(3714038)
+	require.NoError(t, err)
+
+	require.Equal(t, uint64(3713926), bn)
 }

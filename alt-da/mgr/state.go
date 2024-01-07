@@ -150,8 +150,16 @@ func (s *State) ExpireChallenges(bn uint64) (uint64, error) {
 	return latest, err
 }
 
+// safely prune in case reset is deeper than the finalized l1
+const commPruneMargin = 200
+
 // Prune removes commitments once they can no longer be challenged or resolved.
 func (s *State) Prune(bn uint64) {
+	if bn > commPruneMargin {
+		bn -= commPruneMargin
+	} else {
+		bn = 0
+	}
 	for i := 0; i < len(s.comms); i++ {
 		c := s.comms[i]
 		if c.blockNumber < bn {
