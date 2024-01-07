@@ -177,5 +177,5 @@ func TestExpireChallenges(t *testing.T) {
 	bn, err = state.ExpireChallenges(3714038)
 	require.NoError(t, err)
 
-	logger.Info("finalized", "bn", bn)
+	require.Equal(t, uint64(3713926), bn)
 }
