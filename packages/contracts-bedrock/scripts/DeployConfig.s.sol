@@ -58,6 +58,9 @@ contract DeployConfig is Script {
     uint256 public systemConfigStartBlock;
     uint256 public requiredProtocolVersion;
     uint256 public recommendedProtocolVersion;
+    uint256 public daChallengeWindow;
+    uint256 public daResolveWindow;
+    uint256 public daBondSize;
 
     function read(string memory _path) public {
         console.log("DeployConfig: reading file %s", _path);
@@ -119,6 +122,14 @@ contract DeployConfig is Script {
             preimageOracleMinProposalSize = stdJson.readUint(_json, "$.preimageOracleMinProposalSize");
             preimageOracleChallengePeriod = stdJson.readUint(_json, "$.preimageOracleChallengePeriod");
         }
+
+	try vm.parseJsonUint(_json, "$.daChallengeWindow") returns (uint256 _daChallengeWindow) {
+	  daChallengeWindow = _daChallengeWindow;
+	  daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
+	  daBondSize = stdJson.readUint(_json, "$.daBondSize");
+
+	  console.log("DeployConfig: initializing plasma parameters");
+	} catch {}
     }
 
     function l1StartingBlockTag() public returns (bytes32) {
