@@ -269,6 +269,7 @@ contract Deploy is Deployer {
         deploySafe();
         setupSuperchain();
         setupOpChain();
+	setupOpPlasma();
     }
 
     ////////////////////////////////////////////////////////////////
