@@ -57,7 +57,8 @@
   "faultGameSplitDepth": 14,
   "preimageOracleMinProposalSize": 1800000,
   "preimageOracleChallengePeriod": 86400,
-  "daChallengeWindow": 1000,
-  "daResolveWindow": 1000,
-  "daBondSize": 1000
+  "daChallengeWindow": 6,
+  "daResolveWindow": 6,
+  "daBondSize": 1000000,
+  "daResolverRefundPercentage": 0
 }

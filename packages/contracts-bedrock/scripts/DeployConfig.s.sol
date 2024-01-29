@@ -61,6 +61,7 @@ contract DeployConfig is Script {
     uint256 public daChallengeWindow;
     uint256 public daResolveWindow;
     uint256 public daBondSize;
+    uint256 public daResolverRefundPercentage;
 
     function read(string memory _path) public {
         console.log("DeployConfig: reading file %s", _path);
@@ -107,6 +108,10 @@ contract DeployConfig is Script {
         systemConfigStartBlock = stdJson.readUint(_json, "$.systemConfigStartBlock");
         requiredProtocolVersion = stdJson.readUint(_json, "$.requiredProtocolVersion");
         recommendedProtocolVersion = stdJson.readUint(_json, "$.recommendedProtocolVersion");
+        daChallengeWindow = stdJson.readUint(_json, "$.daChallengeWindow");
+        daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
+        daBondSize = stdJson.readUint(_json, "$.daBondSize");
+        daResolverRefundPercentage = stdJson.readUint(_json, "$.daResolverRefundPercentage");
 
         if (
             block.chainid == Chains.LocalDevnet || block.chainid == Chains.GethDevnet || block.chainid == Chains.Sepolia

@@ -42,5 +42,9 @@
   "l2GenesisRegolithTimeOffset": "0x0",
   "systemConfigStartBlock": 0,
   "requiredProtocolVersion": "0x0000000000000000000000000000000000000000000000000000000000000000",
-  "recommendedProtocolVersion": "0x0000000000000000000000000000000000000000000000000000000000000000"
+  "recommendedProtocolVersion": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "daChallengeWindow": 1000,
+  "daResolveWindow": 1000,
+  "daBondSize": 1000,
+  "daResolverRefundPercentage": 0
 }
