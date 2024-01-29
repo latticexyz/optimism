@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.15;
 
-import { Test } from "forge-std/Test.sol";
+import { Test, console } from "forge-std/Test.sol";
 import { DataAvailabilityChallenge, ChallengeStatus, Challenge } from "../src/L1/DataAvailabilityChallenge.sol";
 import { Proxy } from "src/universal/Proxy.sol";
 
@@ -184,7 +184,7 @@ contract DataAvailabilityChallengeTest is Test {
         dac.challenge(challengedBlockNumber, challengedHash);
     }
 
-    function testResolveSuccess(bytes memory preImage, uint256 challengedBlockNumber) public {
+    function testResolveSuccess(bytes memory preImage, uint256 challengedBlockNumber) public returns (uint256 resolveGasUsed) {
         // Assume the block number is not close to the max uint256 value
         vm.assume(challengedBlockNumber < type(uint256).max - dac.challengeWindow() - dac.resolveWindow());
         bytes32 challengedHash = keccak256(preImage);
@@ -197,7 +197,9 @@ contract DataAvailabilityChallengeTest is Test {
         dac.challenge(challengedBlockNumber, challengedHash);
 
         // Resolve the challenge
+        uint256 gasLeftBefore = gasleft();
         dac.resolve(challengedBlockNumber, challengedHash, preImage);
+        resolveGasUsed = gasLeftBefore - gasleft();
 
         // Expect the challenge to be resolved
         (address _challenger, uint256 _lockedBond, uint256 _startBlock, uint256 _resolvedBlock) = dac.challenges(challengedBlockNumber, challengedHash);
@@ -431,5 +433,60 @@ contract DataAvailabilityChallengeProxyTest is DataAvailabilityChallengeTest {
         proxy.upgradeTo(address(new DataAvailabilityChallenge()));
         dac = DataAvailabilityChallenge(payable(address(proxy)));
         dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE);
+    }
+
+    function generateData(uint256 size, bool zeroBytes) internal pure returns (bytes memory data) {
+        data = new bytes(size);
+        if(zeroBytes) return data;
+
+        for(uint256 i; i < size; i++) {
+            data[i] = hex'FF';
+        }
+    }
+
+    function logGasCost(uint256 size, bool zeroBytes) internal {
+        bytes memory data = generateData(size, zeroBytes);
+        uint256 gasUsed = testResolveSuccess(data, 1);
+        console.log("gas used", size, zeroBytes, gasUsed);
+    }
+
+    function testResolveGasZeroBytesLength0() public {
+        logGasCost(0, true);
+    }
+
+    function testResolveGasNonZeroBytesLength0() public {
+        logGasCost(0, false);
+    }
+
+    function testResolveGasZeroBytesLength32() public {
+        logGasCost(32, true);
+    }
+
+    function testResolveGasNonZeroBytesLength32() public {
+        logGasCost(32, false);
+    }
+
+    function testResolveGasZeroBytesLength1000() public {
+        logGasCost(1000, true);
+    }
+
+    function testResolveGasNonZeroBytesLength1000() public {
+        logGasCost(1000, false);
+    }
+
+    function testResolveGasZeroBytesLength10000() public {
+        logGasCost(10000, true);
+    }
+
+    function testResolveGasNonZeroBytesLength10000() public {
+        logGasCost(10000, false);
+    }
+
+    function testResolveGasZeroBytesLength128000() public {
+        logGasCost(128000, true);
+    }
+
+    function testResolveGasNonZeroBytesLength128000() public {
+        logGasCost(128000, false);
     }
 }
