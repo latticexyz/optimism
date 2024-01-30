@@ -76,12 +76,22 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @notice An event that is emitted when the bond size required to initiate a challenge changes.
     event RequiredBondSizeChanged(uint256 challengeWindow);
 
+    /// @notice An event that is emitted when the percentage of the resolving cost to be refunded to the resolver changes.
+    event ResolverRefundPercentageChanged(uint256 resolverRefundPercentage);
+
     /// @notice An event that is emitted when a user's bond balance changes.
     event BalanceChanged(address account, uint256 balance);
 
     /// @notice Semantic version.
     /// @custom:semver 0.0.0
     string public constant version = "0.0.0";
+
+    /// @notice The fixed cost of resolving a challenge.
+    uint256 public constant fixedResolutionCost = 44200;
+
+    /// @notice The variable cost of resolving a callenge per byte of calldata.
+    /// @dev upper limit; 16 gas per non-zero calldata byte, 4 gas variable execution cost per byte.
+    uint256 public constant variableResolutionCost = 16 + 4;
 
     /// @notice The block interval during which a commitment can be challenged.
     uint256 public challengeWindow;
@@ -91,6 +101,9 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
     /// @notice The amount required to post a challenge.
     uint256 public bondSize;
+
+    /// @notice The percentage of the resolving cost to be refunded to the resolver.
+    uint256 public resolverRefundPercentage;
 
     /// @notice A mapping from addresses to their bond balance in the contract.
     mapping(address => uint256) public balances;
@@ -110,7 +123,8 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         address _owner,
         uint256 _challengeWindow,
         uint256 _resolveWindow,
-        uint256 _bondSize
+        uint256 _bondSize,
+        uint256 _resolverRefundPercentage
     )
         public
         initializer
@@ -119,6 +133,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         challengeWindow = _challengeWindow;
         resolveWindow = _resolveWindow;
         setBondSize(_bondSize);
+        setResolverRefundPercentage(_resolverRefundPercentage);
         _transferOwnership(_owner);
     }
 
@@ -127,6 +142,11 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     function setBondSize(uint256 _bondSize) public onlyOwner {
         bondSize = _bondSize;
         emit RequiredBondSizeChanged(_bondSize);
+    }
+
+    /// @notice Sets the percentage of the resolving cost to be refunded to the resolver
+    function setResolverRefundPercentage(uint256 _resolverRefundPercentage) public onlyOwner {
+        resolverRefundPercentage = _resolverRefundPercentage;
     }
 
     /// @notice Post a bond as prerequisite for challenging a commitment.
@@ -246,6 +266,42 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
         // emit an event to notify that the challenge status is now resolved
         emit ChallengeStatusChanged(challengedHash, challengedBlockNumber, ChallengeStatus.Resolved);
+
+        // distribute the bond among challenger, resolver and address(0)
+        _distributeBond(activeChallenge, preImage.length, msg.sender);
+
+    }
+
+    function _distributeBond(Challenge storage resolvedChallenge, uint256 preImageLength, address resolver) internal {
+        uint256 lockedBond = resolvedChallenge.lockedBond;
+        address challenger = resolvedChallenge.challenger;
+
+        // approximate the cost of resolving a challenge with the provided pre-image size
+        uint256 resolutionCost = (fixedResolutionCost + preImageLength * variableResolutionCost) * tx.gasprice;
+
+        // refund excess bond to the challenger
+        if(lockedBond > resolutionCost) {
+            balances[challenger] += lockedBond - resolutionCost;
+            lockedBond = resolutionCost;
+            emit BalanceChanged(challenger, balances[challenger]);
+        }
+
+        // refund a percentage of the resolution cost to the resolver (but not more than the locked bond)
+        uint256 resolverRefund = resolutionCost * resolverRefundPercentage / 100;
+        if(resolverRefund > lockedBond) {
+            resolverRefund = lockedBond;
+            lockedBond = 0;
+        }
+        if(resolverRefund > 0) {
+            balances[resolver] += resolverRefund;
+            emit BalanceChanged(resolver, balances[resolver]);
+        }
+
+        // burn the remaining bond
+        if(lockedBond > 0) {
+            payable(address(0)).transfer(lockedBond);
+        }
+        challenge.lockedBond = 0;
     }
 
     /// @notice Unlock the bond associated wth an expired challenge.
