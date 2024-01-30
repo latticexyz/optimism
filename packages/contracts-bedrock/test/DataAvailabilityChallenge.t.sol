@@ -9,13 +9,14 @@ address constant DAC_OWNER = address(1234);
 uint256 constant CHALLENGE_WINDOW = 1000;
 uint256 constant RESOLVE_WINDOW = 1000;
 uint256 constant BOND_SIZE = 1000;
+uint256 constant RESOLVER_REFUND_PERCENTAGE = 50;
 
 contract DataAvailabilityChallengeTest is Test {
     DataAvailabilityChallenge public dac;
 
     function setUp() public virtual {
         dac = new DataAvailabilityChallenge();
-        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE);
+        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE, RESOLVER_REFUND_PERCENTAGE);
     }
 
     function testInitialize() public {
@@ -25,7 +26,7 @@ contract DataAvailabilityChallengeTest is Test {
         assertEq(dac.bondSize(), BOND_SIZE);
 
         vm.expectRevert("Initializable: contract is already initialized");
-        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE);
+        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE, RESOLVER_REFUND_PERCENTAGE);
     }
 
     function testDeposit() public {
@@ -432,7 +433,7 @@ contract DataAvailabilityChallengeProxyTest is DataAvailabilityChallengeTest {
         Proxy proxy = new Proxy(address(this));
         proxy.upgradeTo(address(new DataAvailabilityChallenge()));
         dac = DataAvailabilityChallenge(payable(address(proxy)));
-        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE);
+        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE, RESOLVER_REFUND_PERCENTAGE);
     }
 }
 
@@ -444,7 +445,7 @@ contract DataAvailabilityChallengeResolveGasTest is Test {
         Proxy proxy = new Proxy(address(this));
         proxy.upgradeTo(address(new DataAvailabilityChallenge()));
         dac = DataAvailabilityChallenge(payable(address(proxy)));
-        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE);
+        dac.initialize(DAC_OWNER, CHALLENGE_WINDOW, RESOLVE_WINDOW, BOND_SIZE, RESOLVER_REFUND_PERCENTAGE);
 
         // Initialize challenges to resolve later
         _challenge(data0);

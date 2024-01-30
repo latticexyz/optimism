@@ -879,12 +879,13 @@ contract Deploy is Deployer {
         uint256 daChallengeWindow = cfg.daChallengeWindow();
         uint256 daResolveWindow = cfg.daResolveWindow();
         uint256 daBondSize = cfg.daBondSize();
+        uint256 daResolverRefundPercentage = cfg.daResolverRefundPercentage();
 
         _upgradeAndCallViaSafe({
             _proxy: payable(dataAvailabilityChallengeProxy),
             _implementation: dataAvailabilityChallenge,
             _innerCallData: abi.encodeCall(
-                DataAvailabilityChallenge.initialize, (finalSystemOwner, daChallengeWindow, daResolveWindow, daBondSize)
+                DataAvailabilityChallenge.initialize, (finalSystemOwner, daChallengeWindow, daResolveWindow, daBondSize, daResolverRefundPercentage)
                 )
         });
 

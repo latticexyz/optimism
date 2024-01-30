@@ -223,6 +223,8 @@ type DeployConfig struct {
 	DaResolveWindow uint64 `json:"daResolveWindow"`
 	// DaBondSize represents the required bond size to initiate a data availability challenge.
 	DaBondSize uint64 `json:"daBondSize"`
+	// DaResolverRefundPercentage represents the percentage of the resolving cost to be refunded to the resolver.
+	DaResolverRefundPercentage uint64 `json:"daResolverRefundPercentage"`
 
 	// DataAvailabilityChallengeProxy is the address of the DA challenge contract.
 	DataAvailabilityChallengeProxy common.Address `json:"dataAvailabilityChallengeProxy"`

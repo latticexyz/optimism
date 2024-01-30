@@ -56,6 +56,7 @@ contract DeployConfig is Script {
     uint256 public daChallengeWindow;
     uint256 public daResolveWindow;
     uint256 public daBondSize;
+    uint256 public daResolverRefundPercentage;
 
     constructor(string memory _path) {
         console.log("DeployConfig: reading file %s", _path);
@@ -105,6 +106,7 @@ contract DeployConfig is Script {
         daChallengeWindow = stdJson.readUint(_json, "$.daChallengeWindow");
         daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
         daBondSize = stdJson.readUint(_json, "$.daBondSize");
+        daResolverRefundPercentage = stdJson.readUint(_json, "$.daResolverRefundPercentage");
 
         if (block.chainid == Chains.LocalDevnet || block.chainid == Chains.GethDevnet) {
             faultGameAbsolutePrestate = stdJson.readUint(_json, "$.faultGameAbsolutePrestate");
