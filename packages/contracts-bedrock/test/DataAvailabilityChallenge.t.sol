@@ -206,7 +206,8 @@ contract DataAvailabilityChallengeTest is Test {
         (address _challenger, uint256 _lockedBond, uint256 _startBlock, uint256 _resolvedBlock) = dac.challenges(challengedBlockNumber, challengedHash);
 
         assertEq(_challenger, address(this));
-        assertEq(_lockedBond, dac.bondSize());
+        assertEq(_lockedBond, 0);
+        // TODO: add more tests for correct distribution of the bond
         assertEq(_startBlock, block.number);
         assertEq(_resolvedBlock, block.number);
         assertEq(uint8(dac.getChallengeStatus(challengedBlockNumber, challengedHash)), uint8(ChallengeStatus.Resolved));
