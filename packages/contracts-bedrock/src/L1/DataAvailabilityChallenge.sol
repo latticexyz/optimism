@@ -290,10 +290,10 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         uint256 resolverRefund = resolutionCost * resolverRefundPercentage / 100;
         if(resolverRefund > lockedBond) {
             resolverRefund = lockedBond;
-            lockedBond = 0;
         }
         if(resolverRefund > 0) {
             balances[resolver] += resolverRefund;
+            lockedBond -= resolverRefund;
             emit BalanceChanged(resolver, balances[resolver]);
         }
 

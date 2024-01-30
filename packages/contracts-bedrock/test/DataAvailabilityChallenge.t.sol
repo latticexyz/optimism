@@ -8,7 +8,7 @@ import { Proxy } from "src/universal/Proxy.sol";
 address constant DAC_OWNER = address(1234);
 uint256 constant CHALLENGE_WINDOW = 1000;
 uint256 constant RESOLVE_WINDOW = 1000;
-uint256 constant BOND_SIZE = 1000;
+uint256 constant BOND_SIZE = 1000000000;
 uint256 constant RESOLVER_REFUND_PERCENTAGE = 50;
 
 contract DataAvailabilityChallengeTest is Test {
@@ -186,6 +186,8 @@ contract DataAvailabilityChallengeTest is Test {
     }
 
     function testResolveSuccess(bytes memory preImage, uint256 challengedBlockNumber) public returns (uint256 resolveGasUsed) {
+        vm.txGasPrice(2);
+
         // Assume the block number is not close to the max uint256 value
         vm.assume(challengedBlockNumber < type(uint256).max - dac.challengeWindow() - dac.resolveWindow());
         bytes32 challengedHash = keccak256(preImage);
@@ -194,23 +196,38 @@ contract DataAvailabilityChallengeTest is Test {
         vm.roll(challengedBlockNumber + 1);
 
         // Challenge the hash
+        address challenger = address(54321);
+        vm.deal(challenger, dac.bondSize());
+        vm.prank(challenger);
         dac.deposit{ value: dac.bondSize() }();
+        vm.prank(challenger);
         dac.challenge(challengedBlockNumber, challengedHash);
 
         // Resolve the challenge
+        address resolver = address(12345);
         uint256 gasLeftBefore = gasleft();
+        vm.prank(resolver);
         dac.resolve(challengedBlockNumber, challengedHash, preImage);
         resolveGasUsed = gasLeftBefore - gasleft();
 
         // Expect the challenge to be resolved
         (address _challenger, uint256 _lockedBond, uint256 _startBlock, uint256 _resolvedBlock) = dac.challenges(challengedBlockNumber, challengedHash);
 
-        assertEq(_challenger, address(this));
+        assertEq(_challenger, challenger);
         assertEq(_lockedBond, 0);
-        // TODO: add more tests for correct distribution of the bond
         assertEq(_startBlock, block.number);
         assertEq(_resolvedBlock, block.number);
         assertEq(uint8(dac.getChallengeStatus(challengedBlockNumber, challengedHash)), uint8(ChallengeStatus.Resolved));
+
+        // Assert bond distribution
+        // TODO: fix this math
+        uint256 resolutionCost = resolveGasUsed * tx.gasprice;
+        uint256 challengerRefund = _lockedBond > resolutionCost ? _lockedBond - resolutionCost : 0;
+        uint256 resolverRefund = resolutionCost * RESOLVER_REFUND_PERCENTAGE / 100;
+        resolverRefund = resolverRefund > _lockedBond ? _lockedBond : resolverRefund;
+        uint256 burned = _lockedBond - challengerRefund - resolverRefund;
+        assertEq(dac.balances(challenger), dac.bondSize() - resolutionCost);
+        assertEq(address(0).balance, resolutionCost * (100))
     }
 
     function testResolveFailNonExistentChallenge() public {
