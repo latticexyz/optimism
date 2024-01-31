@@ -199,9 +199,7 @@ contract DataAvailabilityChallengeTest is Test {
         address challenger = address(54321);
         vm.deal(challenger, dac.bondSize());
         vm.prank(challenger);
-        dac.deposit{ value: dac.bondSize() }();
-        vm.prank(challenger);
-        dac.challenge(challengedBlockNumber, challengedHash);
+        dac.challenge{ value: dac.bondSize() }(challengedBlockNumber, challengedHash);
 
         // Resolve the challenge
         address resolver = address(12345);
@@ -222,12 +220,20 @@ contract DataAvailabilityChallengeTest is Test {
         // Assert bond distribution
         // TODO: fix this math
         uint256 resolutionCost = resolveGasUsed * tx.gasprice;
+
+        // Assert challenger balance
         uint256 challengerRefund = _lockedBond > resolutionCost ? _lockedBond - resolutionCost : 0;
+        assertEq(dac.balances(challenger), challengerRefund);
+
+        // Assert resolver balance
         uint256 resolverRefund = resolutionCost * RESOLVER_REFUND_PERCENTAGE / 100;
+        resolverRefund = resolverRefund > resolutionCost ? resolutionCost : resolverRefund;
         resolverRefund = resolverRefund > _lockedBond ? _lockedBond : resolverRefund;
+        assertEq(dac.balances(resolver), resolverRefund);
+
+        // Assert burned amount
         uint256 burned = _lockedBond - challengerRefund - resolverRefund;
-        assertEq(dac.balances(challenger), dac.bondSize() - resolutionCost);
-        assertEq(address(0).balance, resolutionCost * (100))
+        assertEq(address(0).balance, burned);
     }
 
     function testResolveFailNonExistentChallenge() public {
