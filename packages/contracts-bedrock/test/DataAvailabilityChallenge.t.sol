@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.15;
 
-import { Test, console } from "forge-std/Test.sol";
+import { Test } from "forge-std/Test.sol";
 import { DataAvailabilityChallenge, ChallengeStatus, Challenge } from "../src/L1/DataAvailabilityChallenge.sol";
 import { Proxy } from "src/universal/Proxy.sol";
 
@@ -213,7 +213,6 @@ contract DataAvailabilityChallengeTest is Test {
         assertEq(_startBlock, block.number);
         assertEq(_resolvedBlock, block.number);
         assertEq(uint8(dac.getChallengeStatus(challengedBlockNumber, challengedHash)), uint8(ChallengeStatus.Resolved));
-
 
         // Assert challenger balance after bond distribution
         uint256 resolutionCost = (dac.fixedResolutionCost() + preImage.length * dac.variableResolutionCost()) * tx.gasprice;
@@ -435,6 +434,12 @@ contract DataAvailabilityChallengeTest is Test {
 
         // Expect the challenge to succeed
         dac.challenge(0, "some hash");
+    }
+
+    function testSetResolverRefundPercentage(uint256 resolverRefundPercentage) public {
+        vm.prank(DAC_OWNER);
+        dac.setResolverRefundPercentage(resolverRefundPercentage);
+        assertEq(dac.resolverRefundPercentage(), resolverRefundPercentage);
     }
 
     function testSetBondSizeFailOnlyOwner(address notOwner, uint256 newBondSize) public {

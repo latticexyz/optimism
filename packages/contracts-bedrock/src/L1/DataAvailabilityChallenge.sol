@@ -34,6 +34,9 @@ struct Challenge {
 ///         If a challenge is expired, the challenger's bond is unlocked and the challenged commitment is added to the
 ///         chain of expired challenges.
 contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
+    /// @notice Error for when the provided resolver refund percentage exceeds 100%.
+    error InvalidResolverRefundPercentage(uint256 invalidResolverRefundPercentage);
+
     /// @notice Error for when the challenger's bond is too low.
     error BondTooLow(uint256 balance, uint256 required);
 
@@ -134,8 +137,13 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         emit RequiredBondSizeChanged(_bondSize);
     }
 
-    /// @notice Sets the percentage of the resolving cost to be refunded to the resolver
+    /// @notice Sets the percentage of the resolving cost to be refunded to the resolver.
+    /// @dev The function reverts if the provided percentage is above 100.
+    /// @param _resolverRefundPercentage The percentage of the resolving cost to be refunded to the resolver.
     function setResolverRefundPercentage(uint256 _resolverRefundPercentage) public onlyOwner {
+        if(_resolverRefundPercentage > 100) {
+            revert InvalidResolverRefundPercentage(_resolverRefundPercentage);
+        }
         resolverRefundPercentage = _resolverRefundPercentage;
     }
 
@@ -261,6 +269,16 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         _distributeBond(activeChallenge, preImage.length, msg.sender);
     }
 
+    /// @notice Distribute the bond of a resolved challenge among the resolver, challenger and address(0).
+    ///         The challenger is refunded the bond amount exceeding the resolution cost.
+    ///         The resolver is refunded a percentage of the resolution cost based on the `resolverRefundPercentage` state variable.
+    ///         The remaining bond is burned by sending it to address(0).
+    /// @dev The resolution cost is approximated based on a fixed cost and variable cost depending on the size of the pre-image.
+    ///      The real cost resolution cost might vary, because calldata is priced differently for zero and non-zero bytes.
+    ///      Computing the exact cost adds too much gas overhead to be worth the tradeoff.
+    /// @param resolvedChallenge The resolved challenge in storage.
+    /// @param preImageLength The size of the pre-image used to resolve the challenge.
+    /// @param resolver The address of the resolver.
     function _distributeBond(Challenge storage resolvedChallenge, uint256 preImageLength, address resolver) internal {
         uint256 lockedBond = resolvedChallenge.lockedBond;
         address challenger = resolvedChallenge.challenger;
