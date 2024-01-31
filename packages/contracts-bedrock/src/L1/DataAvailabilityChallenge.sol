@@ -274,7 +274,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     ///         The resolver is refunded a percentage of the resolution cost based on the `resolverRefundPercentage` state variable.
     ///         The remaining bond is burned by sending it to address(0).
     /// @dev The resolution cost is approximated based on a fixed cost and variable cost depending on the size of the pre-image.
-    ///      The real cost resolution cost might vary, because calldata is priced differently for zero and non-zero bytes.
+    ///      The real resolution cost might vary, because calldata is priced differently for zero and non-zero bytes.
     ///      Computing the exact cost adds too much gas overhead to be worth the tradeoff.
     /// @param resolvedChallenge The resolved challenge in storage.
     /// @param preImageLength The size of the pre-image used to resolve the challenge.
