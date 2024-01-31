@@ -185,8 +185,20 @@ contract DataAvailabilityChallengeTest is Test {
         dac.challenge(challengedBlockNumber, challengedHash);
     }
 
-    function testResolveSuccess(address challenger, address resolver, bytes memory preImage, uint256 challengedBlockNumber) public {
+    function testResolveSuccess(address challenger, address resolver, bytes memory preImage, uint256 challengedBlockNumber, uint256 resolverRefundPercentage) public {
+        // Assume neither the challenger nor resolver is address(0)
+        vm.assume(challenger != address(0));
+        vm.assume(resolver != address(0));
+
+        // Assume the resolver refund percentage is valid
+        vm.assume(resolverRefundPercentage <= 100);
+
+        // Set the gas price to a non-zero value to test bond distribution logic
         vm.txGasPrice(2);
+
+        // Change the resolver refund percentage
+        vm.prank(DAC_OWNER);
+        dac.setResolverRefundPercentage(resolverRefundPercentage);
 
         // Assume the block number is not close to the max uint256 value
         vm.assume(challengedBlockNumber < type(uint256).max - dac.challengeWindow() - dac.resolveWindow());
@@ -220,7 +232,7 @@ contract DataAvailabilityChallengeTest is Test {
         assertEq(dac.balances(challenger), challengerRefund, "challenger refund");
 
         // Assert resolver balance after bond distribution
-        uint256 resolverRefund = resolutionCost * RESOLVER_REFUND_PERCENTAGE / 100;
+        uint256 resolverRefund = resolutionCost * dac.resolverRefundPercentage() / 100;
         resolverRefund = resolverRefund > resolutionCost ? resolutionCost : resolverRefund;
         resolverRefund = resolverRefund > bondSize ? bondSize : resolverRefund;
         assertEq(dac.balances(resolver), resolverRefund, "resolver refund");
@@ -437,9 +449,17 @@ contract DataAvailabilityChallengeTest is Test {
     }
 
     function testSetResolverRefundPercentage(uint256 resolverRefundPercentage) public {
+        vm.assume(resolverRefundPercentage <= 100);
         vm.prank(DAC_OWNER);
         dac.setResolverRefundPercentage(resolverRefundPercentage);
         assertEq(dac.resolverRefundPercentage(), resolverRefundPercentage);
+
+    }
+
+    function testSetResolverRefundPercentageFail() public {
+        vm.expectRevert(abi.encodeWithSelector(DataAvailabilityChallenge.InvalidResolverRefundPercentage.selector, 101));
+        vm.prank(DAC_OWNER);
+        dac.setResolverRefundPercentage(101);
     }
 
     function testSetBondSizeFailOnlyOwner(address notOwner, uint256 newBondSize) public {
