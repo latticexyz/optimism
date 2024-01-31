@@ -5,16 +5,6 @@ import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/O
 import { ISemver } from "src/universal/ISemver.sol";
 import { SafeCall } from "src/libraries/SafeCall.sol";
 
-/**
- * TODO:
- * - challenge: required bond dynamic based on current fee per gas?
- * - resolve:
- *   - cost: (static_cost + (dynamic_cost + calldata_cost) * preimage_size) * current fee per gas
- *            44.2k          3.5            16
- *   - update balances: resolver gets resolver share, challenger gets diff between cost and bond, rest is burned
- * - make resolver share a variable parameter
- */
-
 /// @dev An enum representing the status of a DA challenge.
 enum ChallengeStatus {
     Uninitialized,
@@ -269,7 +259,6 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
         // distribute the bond among challenger, resolver and address(0)
         _distributeBond(activeChallenge, preImage.length, msg.sender);
-
     }
 
     function _distributeBond(Challenge storage resolvedChallenge, uint256 preImageLength, address resolver) internal {

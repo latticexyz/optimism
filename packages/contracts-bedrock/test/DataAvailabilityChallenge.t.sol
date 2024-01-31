@@ -185,7 +185,7 @@ contract DataAvailabilityChallengeTest is Test {
         dac.challenge(challengedBlockNumber, challengedHash);
     }
 
-    function testResolveSuccess(bytes memory preImage, uint256 challengedBlockNumber) public returns (uint256 resolveGasUsed) {
+    function testResolveSuccess(address challenger, address resolver, bytes memory preImage, uint256 challengedBlockNumber) public {
         vm.txGasPrice(2);
 
         // Assume the block number is not close to the max uint256 value
@@ -196,17 +196,14 @@ contract DataAvailabilityChallengeTest is Test {
         vm.roll(challengedBlockNumber + 1);
 
         // Challenge the hash
-        address challenger = address(54321);
-        vm.deal(challenger, dac.bondSize());
+        uint256 bondSize = dac.bondSize();
+        vm.deal(challenger, bondSize);
         vm.prank(challenger);
-        dac.challenge{ value: dac.bondSize() }(challengedBlockNumber, challengedHash);
+        dac.challenge{ value: bondSize }(challengedBlockNumber, challengedHash);
 
         // Resolve the challenge
-        address resolver = address(12345);
-        uint256 gasLeftBefore = gasleft();
         vm.prank(resolver);
         dac.resolve(challengedBlockNumber, challengedHash, preImage);
-        resolveGasUsed = gasLeftBefore - gasleft();
 
         // Expect the challenge to be resolved
         (address _challenger, uint256 _lockedBond, uint256 _startBlock, uint256 _resolvedBlock) = dac.challenges(challengedBlockNumber, challengedHash);
@@ -217,23 +214,21 @@ contract DataAvailabilityChallengeTest is Test {
         assertEq(_resolvedBlock, block.number);
         assertEq(uint8(dac.getChallengeStatus(challengedBlockNumber, challengedHash)), uint8(ChallengeStatus.Resolved));
 
-        // Assert bond distribution
-        // TODO: fix this math
-        uint256 resolutionCost = resolveGasUsed * tx.gasprice;
 
-        // Assert challenger balance
-        uint256 challengerRefund = _lockedBond > resolutionCost ? _lockedBond - resolutionCost : 0;
-        assertEq(dac.balances(challenger), challengerRefund);
+        // Assert challenger balance after bond distribution
+        uint256 resolutionCost = (dac.fixedResolutionCost() + preImage.length * dac.variableResolutionCost()) * tx.gasprice;
+        uint256 challengerRefund = bondSize > resolutionCost ? bondSize - resolutionCost : 0;
+        assertEq(dac.balances(challenger), challengerRefund, "challenger refund");
 
-        // Assert resolver balance
+        // Assert resolver balance after bond distribution
         uint256 resolverRefund = resolutionCost * RESOLVER_REFUND_PERCENTAGE / 100;
         resolverRefund = resolverRefund > resolutionCost ? resolutionCost : resolverRefund;
-        resolverRefund = resolverRefund > _lockedBond ? _lockedBond : resolverRefund;
-        assertEq(dac.balances(resolver), resolverRefund);
+        resolverRefund = resolverRefund > bondSize ? bondSize : resolverRefund;
+        assertEq(dac.balances(resolver), resolverRefund, "resolver refund");
 
-        // Assert burned amount
-        uint256 burned = _lockedBond - challengerRefund - resolverRefund;
-        assertEq(address(0).balance, burned);
+        // Assert burned amount after bond distribution
+        uint256 burned = bondSize - challengerRefund - resolverRefund;
+        assertEq(address(0).balance, burned, "burned bond");
     }
 
     function testResolveFailNonExistentChallenge() public {
