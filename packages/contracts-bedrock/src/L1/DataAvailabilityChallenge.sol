@@ -69,7 +69,8 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @notice An event that is emitted when the bond size required to initiate a challenge changes.
     event RequiredBondSizeChanged(uint256 challengeWindow);
 
-    /// @notice An event that is emitted when the percentage of the resolving cost to be refunded to the resolver changes.
+    /// @notice An event that is emitted when the percentage of the resolving cost to be refunded to the resolver
+    /// changes.
     event ResolverRefundPercentageChanged(uint256 resolverRefundPercentage);
 
     /// @notice An event that is emitted when a user's bond balance changes.
@@ -141,7 +142,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @dev The function reverts if the provided percentage is above 100.
     /// @param _resolverRefundPercentage The percentage of the resolving cost to be refunded to the resolver.
     function setResolverRefundPercentage(uint256 _resolverRefundPercentage) public onlyOwner {
-        if(_resolverRefundPercentage > 100) {
+        if (_resolverRefundPercentage > 100) {
             revert InvalidResolverRefundPercentage(_resolverRefundPercentage);
         }
         resolverRefundPercentage = _resolverRefundPercentage;
@@ -191,16 +192,23 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param challengedBlockNumber The block number at which the commitment was made.
     /// @param challengedHash The data commitment that is being challenged.
     /// @return The status of the challenge.
-    function getChallengeStatus(uint256 challengedBlockNumber, bytes32 challengedHash) public view returns (ChallengeStatus) {
+    function getChallengeStatus(
+        uint256 challengedBlockNumber,
+        bytes32 challengedHash
+    )
+        public
+        view
+        returns (ChallengeStatus)
+    {
         Challenge memory _challenge = challenges[challengedBlockNumber][challengedHash];
         // if the address is 0, the challenge is uninitialized
-        if(_challenge.challenger == address(0)) return ChallengeStatus.Uninitialized;
+        if (_challenge.challenger == address(0)) return ChallengeStatus.Uninitialized;
 
         // if the challenge has a resolved block, it is resolved
-        if(_challenge.resolvedBlock != 0) return ChallengeStatus.Resolved;
+        if (_challenge.resolvedBlock != 0) return ChallengeStatus.Resolved;
 
         // if the challenge's start block is in the resolve window, it is active
-        if(_isInResolveWindow(_challenge.startBlock)) return ChallengeStatus.Active;
+        if (_isInResolveWindow(_challenge.startBlock)) return ChallengeStatus.Active;
 
         // if the challenge's start block is not in the resolve window, it is expired
         return ChallengeStatus.Expired;
@@ -249,7 +257,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param preImage The pre-image data corresponding to the challenged commitment.
     function resolve(uint256 challengedBlockNumber, bytes32 challengedHash, bytes calldata preImage) external {
         // require the provided input data to match the commitment
-        if(challengedHash != keccak256(preImage)) {
+        if (challengedHash != keccak256(preImage)) {
             revert InvalidInputData(keccak256(preImage), challengedHash);
         }
 
@@ -271,9 +279,11 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
     /// @notice Distribute the bond of a resolved challenge among the resolver, challenger and address(0).
     ///         The challenger is refunded the bond amount exceeding the resolution cost.
-    ///         The resolver is refunded a percentage of the resolution cost based on the `resolverRefundPercentage` state variable.
+    ///         The resolver is refunded a percentage of the resolution cost based on the `resolverRefundPercentage`
+    /// state variable.
     ///         The remaining bond is burned by sending it to address(0).
-    /// @dev The resolution cost is approximated based on a fixed cost and variable cost depending on the size of the pre-image.
+    /// @dev The resolution cost is approximated based on a fixed cost and variable cost depending on the size of the
+    /// pre-image.
     ///      The real resolution cost might vary, because calldata is priced differently for zero and non-zero bytes.
     ///      Computing the exact cost adds too much gas overhead to be worth the tradeoff.
     /// @param resolvedChallenge The resolved challenge in storage.
@@ -287,7 +297,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         uint256 resolutionCost = (fixedResolutionCost + preImageLength * variableResolutionCost) * tx.gasprice;
 
         // refund bond exceeding the resolution cost to the challenger
-        if(lockedBond > resolutionCost) {
+        if (lockedBond > resolutionCost) {
             balances[challenger] += lockedBond - resolutionCost;
             lockedBond = resolutionCost;
             emit BalanceChanged(challenger, balances[challenger]);
@@ -295,17 +305,17 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
         // refund a percentage of the resolution cost to the resolver (but not more than the locked bond)
         uint256 resolverRefund = resolutionCost * resolverRefundPercentage / 100;
-        if(resolverRefund > lockedBond) {
+        if (resolverRefund > lockedBond) {
             resolverRefund = lockedBond;
         }
-        if(resolverRefund > 0) {
+        if (resolverRefund > 0) {
             balances[resolver] += resolverRefund;
             lockedBond -= resolverRefund;
             emit BalanceChanged(resolver, balances[resolver]);
         }
 
         // burn the remaining bond
-        if(lockedBond > 0) {
+        if (lockedBond > 0) {
             payable(address(0)).transfer(lockedBond);
         }
         resolvedChallenge.lockedBond = 0;
