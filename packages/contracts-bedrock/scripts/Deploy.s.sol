@@ -269,7 +269,7 @@ contract Deploy is Deployer {
         deploySafe();
         setupSuperchain();
         setupOpChain();
-	setupOpPlasma();
+        setupOpPlasma();
     }
 
     ////////////////////////////////////////////////////////////////
@@ -365,14 +365,14 @@ contract Deploy is Deployer {
         initializeOptimismPortal();
     }
 
-    /// @notice Add Plasma setup to the OP chain 
+    /// @notice Add Plasma setup to the OP chain
     function setupOpPlasma() public {
-	if (cfg.daChallengeWindow() > 0) {
-	    console.log("Deploying OP Plasma");
-	    deployDataAvailabilityChallengeProxy();
-	    deployDataAvailabilityChallenge();
-	    initializeDataAvailabilityChallenge();
-	}
+        if (cfg.daChallengeWindow() > 0) {
+            console.log("Deploying OP Plasma");
+            deployDataAvailabilityChallengeProxy();
+            deployDataAvailabilityChallenge();
+            initializeDataAvailabilityChallenge();
+        }
     }
 
     ////////////////////////////////////////////////////////////////
@@ -496,19 +496,17 @@ contract Deploy is Deployer {
 
     /// @notice Deploy the DataAvailabilityChallengeProxy
     function deployDataAvailabilityChallengeProxy() public broadcast returns (address addr_) {
-	console.log("Deploying proxy for DataAvailabilityChallenge");
+        console.log("Deploying proxy for DataAvailabilityChallenge");
         address proxyAdmin = mustGetAddress("ProxyAdmin");
-        Proxy proxy = new Proxy({
-            _admin: proxyAdmin
-        });
+        Proxy proxy = new Proxy({ _admin: proxyAdmin });
 
-	require(EIP1967Helper.getAdmin(address(proxy)) == proxyAdmin);
+        require(EIP1967Helper.getAdmin(address(proxy)) == proxyAdmin);
 
         save("DataAvailabilityChallengeProxy", address(proxy));
         console.log("DataAvailabilityChallengeProxy deployed at %s", address(proxy));
 
         addr_ = address(proxy);
-     }
+    }
 
     ////////////////////////////////////////////////////////////////
     //             Implementation Deployment Functions            //
@@ -736,7 +734,7 @@ contract Deploy is Deployer {
 
     /// @notice Deploy the DataAvailabilityChallenge
     function deployDataAvailabilityChallenge() public broadcast returns (address addr_) {
-	console.log("Deploying DataAvailabilityChallenge implementation");
+        console.log("Deploying DataAvailabilityChallenge implementation");
         DataAvailabilityChallenge dac = new DataAvailabilityChallenge();
         save("DataAvailabilityChallenge", address(dac));
         console.log("DataAvailabilityChallenge deployed at %s", address(dac));
@@ -1172,7 +1170,7 @@ contract Deploy is Deployer {
 
     /// @notice Initialize the DataAvailabilityChallenge
     function initializeDataAvailabilityChallenge() public broadcast {
-	console.log("Upgrading and initializing DataAvailabilityChallenge proxy");
+        console.log("Upgrading and initializing DataAvailabilityChallenge proxy");
         address dataAvailabilityChallengeProxy = mustGetAddress("DataAvailabilityChallengeProxy");
         address dataAvailabilityChallenge = mustGetAddress("DataAvailabilityChallenge");
 
@@ -1186,7 +1184,8 @@ contract Deploy is Deployer {
             _proxy: payable(dataAvailabilityChallengeProxy),
             _implementation: dataAvailabilityChallenge,
             _innerCallData: abi.encodeCall(
-                DataAvailabilityChallenge.initialize, (finalSystemOwner, daChallengeWindow, daResolveWindow, daBondSize, daResolverRefundPercentage)
+                DataAvailabilityChallenge.initialize,
+                (finalSystemOwner, daChallengeWindow, daResolveWindow, daBondSize, daResolverRefundPercentage)
                 )
         });
 
