@@ -170,7 +170,7 @@ contract DataAvailabilityChallengeTest is Test {
         bytes32 challengedHash = "some hash";
 
         // Move to challenged block
-        vm.roll(challengedBlockNumber);
+        vm.roll(challengedBlockNumber - 1);
 
         // Challenge fails because the current block number must be after the challenged block
         dac.deposit{ value: dac.bondSize() }();

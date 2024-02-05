@@ -178,7 +178,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param challengedBlockNumber The block number at which the commitment was made.
     /// @return True if the current block is within the challenge window, false otherwise.
     function _isInChallengeWindow(uint256 challengedBlockNumber) internal view returns (bool) {
-        return (block.number > challengedBlockNumber && block.number <= challengedBlockNumber + challengeWindow);
+        return (block.number >= challengedBlockNumber && block.number <= challengedBlockNumber + challengeWindow);
     }
 
     /// @notice Checks if the current block is within the resolve window for a given challenge start block number.
