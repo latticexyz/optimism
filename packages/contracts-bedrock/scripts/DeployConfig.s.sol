@@ -109,7 +109,6 @@ contract DeployConfig is Script {
         requiredProtocolVersion = stdJson.readUint(_json, "$.requiredProtocolVersion");
         recommendedProtocolVersion = stdJson.readUint(_json, "$.recommendedProtocolVersion");
 
-
         if (
             block.chainid == Chains.LocalDevnet || block.chainid == Chains.GethDevnet || block.chainid == Chains.Sepolia
                 || block.chainid == Chains.Goerli
@@ -125,8 +124,8 @@ contract DeployConfig is Script {
             preimageOracleChallengePeriod = stdJson.readUint(_json, "$.preimageOracleChallengePeriod");
         }
 
-        if(vm.keyExists(_json, "$.daChallengeWindow")) {
-	        console.log("DeployConfig: initializing plasma parameters");
+        if (vm.keyExists(_json, "$.daChallengeWindow")) {
+            console.log("DeployConfig: initializing plasma parameters");
             daChallengeWindow = stdJson.readUint(_json, "$.daChallengeWindow");
             daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
             daBondSize = stdJson.readUint(_json, "$.daBondSize");
