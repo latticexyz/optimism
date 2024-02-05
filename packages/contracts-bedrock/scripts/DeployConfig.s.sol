@@ -108,10 +108,7 @@ contract DeployConfig is Script {
         systemConfigStartBlock = stdJson.readUint(_json, "$.systemConfigStartBlock");
         requiredProtocolVersion = stdJson.readUint(_json, "$.requiredProtocolVersion");
         recommendedProtocolVersion = stdJson.readUint(_json, "$.recommendedProtocolVersion");
-        daChallengeWindow = stdJson.readUint(_json, "$.daChallengeWindow");
-        daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
-        daBondSize = stdJson.readUint(_json, "$.daBondSize");
-        daResolverRefundPercentage = stdJson.readUint(_json, "$.daResolverRefundPercentage");
+
 
         if (
             block.chainid == Chains.LocalDevnet || block.chainid == Chains.GethDevnet || block.chainid == Chains.Sepolia
@@ -128,13 +125,13 @@ contract DeployConfig is Script {
             preimageOracleChallengePeriod = stdJson.readUint(_json, "$.preimageOracleChallengePeriod");
         }
 
-	try vm.parseJsonUint(_json, "$.daChallengeWindow") returns (uint256 _daChallengeWindow) {
-	  daChallengeWindow = _daChallengeWindow;
-	  daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
-	  daBondSize = stdJson.readUint(_json, "$.daBondSize");
-
-	  console.log("DeployConfig: initializing plasma parameters");
-	} catch {}
+        if(vm.keyExists(_json, "$.daChallengeWindow")) {
+	        console.log("DeployConfig: initializing plasma parameters");
+            daChallengeWindow = stdJson.readUint(_json, "$.daChallengeWindow");
+            daResolveWindow = stdJson.readUint(_json, "$.daResolveWindow");
+            daBondSize = stdJson.readUint(_json, "$.daBondSize");
+            daResolverRefundPercentage = stdJson.readUint(_json, "$.daResolverRefundPercentage");
+        }
     }
 
     function l1StartingBlockTag() public returns (bytes32) {
