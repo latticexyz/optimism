@@ -1197,5 +1197,6 @@ contract Deploy is Deployer {
         require(dac.challengeWindow() == daChallengeWindow);
         require(dac.resolveWindow() == daResolveWindow);
         require(dac.bondSize() == daBondSize);
+        require(dac.resolverRefundPercentage() == daResolverRefundPercentage);
     }
 }
