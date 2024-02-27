@@ -205,6 +205,11 @@ func (bs *BatcherService) initChannelConfig(cfg *CLIConfig) error {
 	default:
 		return fmt.Errorf("unknown data availability type: %v", cfg.DataAvailabilityType)
 	}
+
+	if bs.UsePlasma && bs.ChannelConfig.MaxFrameSize > plasma.MaxInputSize {
+		return fmt.Errorf("max frame size %d exceeds plasma max input size %d", bs.ChannelConfig.MaxFrameSize, plasma.MaxInputSize)
+	}
+
 	bs.ChannelConfig.MaxFrameSize-- // subtract 1 byte for version
 
 	if bs.UseBlobs && !bs.RollupConfig.IsEcotone(uint64(time.Now().Unix())) {
