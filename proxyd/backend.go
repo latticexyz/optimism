@@ -718,52 +718,52 @@ func (bg *BackendGroup) Forward(ctx context.Context, rpcReqs []*RPCReq, isBatch 
 
 	backends := bg.orderedBackendsForRequest()
 
-	overriddenResponses := make([]*indexedReqRes, 0)
-	rewrittenReqs := make([]*RPCReq, 0, len(rpcReqs))
+	// overriddenResponses := make([]*indexedReqRes, 0)
+	// rewrittenReqs := make([]*RPCReq, 0, len(rpcReqs))
 
-	if bg.Consensus != nil {
-		// When `consensus_aware` is set to `true`, the backend group acts as a load balancer
-		// serving traffic from any backend that agrees in the consensus group
+	// if bg.Consensus != nil {
+	// 	// When `consensus_aware` is set to `true`, the backend group acts as a load balancer
+	// 	// serving traffic from any backend that agrees in the consensus group
 
-		// We also rewrite block tags to enforce compliance with consensus
-		rctx := RewriteContext{
-			latest:        bg.Consensus.GetLatestBlockNumber(),
-			safe:          bg.Consensus.GetSafeBlockNumber(),
-			finalized:     bg.Consensus.GetFinalizedBlockNumber(),
-			maxBlockRange: bg.Consensus.maxBlockRange,
-		}
+	// 	// We also rewrite block tags to enforce compliance with consensus
+	// 	rctx := RewriteContext{
+	// 		latest:        bg.Consensus.GetLatestBlockNumber(),
+	// 		safe:          bg.Consensus.GetSafeBlockNumber(),
+	// 		finalized:     bg.Consensus.GetFinalizedBlockNumber(),
+	// 		maxBlockRange: bg.Consensus.maxBlockRange,
+	// 	}
 
-		for i, req := range rpcReqs {
-			res := RPCRes{JSONRPC: JSONRPCVersion, ID: req.ID}
-			result, err := RewriteTags(rctx, req, &res)
-			switch result {
-			case RewriteOverrideError:
-				overriddenResponses = append(overriddenResponses, &indexedReqRes{
-					index: i,
-					req:   req,
-					res:   &res,
-				})
-				if errors.Is(err, ErrRewriteBlockOutOfRange) {
-					res.Error = ErrBlockOutOfRange
-				} else if errors.Is(err, ErrRewriteRangeTooLarge) {
-					res.Error = ErrInvalidParams(
-						fmt.Sprintf("block range greater than %d max", rctx.maxBlockRange),
-					)
-				} else {
-					res.Error = ErrParseErr
-				}
-			case RewriteOverrideResponse:
-				overriddenResponses = append(overriddenResponses, &indexedReqRes{
-					index: i,
-					req:   req,
-					res:   &res,
-				})
-			case RewriteOverrideRequest, RewriteNone:
-				rewrittenReqs = append(rewrittenReqs, req)
-			}
-		}
-		rpcReqs = rewrittenReqs
-	}
+	// 	for i, req := range rpcReqs {
+	// 		res := RPCRes{JSONRPC: JSONRPCVersion, ID: req.ID}
+	// 		result, err := RewriteTags(rctx, req, &res)
+	// 		switch result {
+	// 		case RewriteOverrideError:
+	// 			overriddenResponses = append(overriddenResponses, &indexedReqRes{
+	// 				index: i,
+	// 				req:   req,
+	// 				res:   &res,
+	// 			})
+	// 			if errors.Is(err, ErrRewriteBlockOutOfRange) {
+	// 				res.Error = ErrBlockOutOfRange
+	// 			} else if errors.Is(err, ErrRewriteRangeTooLarge) {
+	// 				res.Error = ErrInvalidParams(
+	// 					fmt.Sprintf("block range greater than %d max", rctx.maxBlockRange),
+	// 				)
+	// 			} else {
+	// 				res.Error = ErrParseErr
+	// 			}
+	// 		case RewriteOverrideResponse:
+	// 			overriddenResponses = append(overriddenResponses, &indexedReqRes{
+	// 				index: i,
+	// 				req:   req,
+	// 				res:   &res,
+	// 			})
+	// 		case RewriteOverrideRequest, RewriteNone:
+	// 			rewrittenReqs = append(rewrittenReqs, req)
+	// 		}
+	// 	}
+	// 	rpcReqs = rewrittenReqs
+	// }
 
 	rpcRequestsTotal.Inc()
 
@@ -813,15 +813,15 @@ func (bg *BackendGroup) Forward(ctx context.Context, rpcReqs []*RPCReq, isBatch 
 			}
 		}
 
-		// re-apply overridden responses
-		for _, ov := range overriddenResponses {
-			if len(res) > 0 {
-				// insert ov.res at position ov.index
-				res = append(res[:ov.index], append([]*RPCRes{ov.res}, res[ov.index:]...)...)
-			} else {
-				res = append(res, ov.res)
-			}
-		}
+		// // re-apply overridden responses
+		// for _, ov := range overriddenResponses {
+		// 	if len(res) > 0 {
+		// 		// insert ov.res at position ov.index
+		// 		res = append(res[:ov.index], append([]*RPCRes{ov.res}, res[ov.index:]...)...)
+		// 	} else {
+		// 		res = append(res, ov.res)
+		// 	}
+		// }
 
 		return res, servedBy, nil
 	}
