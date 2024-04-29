@@ -195,9 +195,10 @@ func Start(config *Config) (*Server, func(), error) {
 		}
 
 		backendGroups[bgName] = &BackendGroup{
-			Name:            bgName,
-			Backends:        backends,
-			WeightedRouting: bg.WeightedRouting,
+			Name:               bgName,
+			Backends:           backends,
+			WeightedRouting:    bg.WeightedRouting,
+			ConsensusNoRewrite: bg.ConsensusNoRewrite,
 		}
 	}
 
