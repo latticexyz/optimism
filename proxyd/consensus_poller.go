@@ -143,7 +143,7 @@ func (ah *PollerAsyncHandler) Init() {
 	// create the group consensus poller
 	go func() {
 		for {
-			timer := time.NewTimer(ah.cp.interval / 20)
+			timer := time.NewTimer(ah.cp.interval)
 			ah.cp.UpdateBackendGroupConsensus(ah.ctx)
 
 			select {
