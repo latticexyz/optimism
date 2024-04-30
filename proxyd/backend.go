@@ -424,14 +424,14 @@ func (b *Backend) Forward(ctx context.Context, reqs []*RPCReq, isBatch bool) ([]
 	return nil, wrapErr(lastError, "permanent error forwarding request")
 }
 
-func (b *Backend) ProxyWS(clientConn *websocket.Conn, methodWhitelist *StringSet) (*WSProxier, error) {
+func (b *Backend) ProxyWS(clientConn *websocket.Conn, xff string, methodWhitelist *StringSet, s *Server) (*WSProxier, error) {
 	backendConn, _, err := b.dialer.Dial(b.wsURL, nil) // nolint:bodyclose
 	if err != nil {
 		return nil, wrapErr(err, "error dialing backend")
 	}
 
 	activeBackendWsConnsGauge.WithLabelValues(b.Name).Inc()
-	return NewWSProxier(b, clientConn, backendConn, methodWhitelist), nil
+	return NewWSProxier(b, clientConn, xff, backendConn, methodWhitelist, s), nil
 }
 
 // ForwardRPC makes a call directly to a backend and populate the response into `res`
@@ -831,11 +831,11 @@ func (bg *BackendGroup) Forward(ctx context.Context, rpcReqs []*RPCReq, isBatch 
 	return nil, "", ErrNoBackends
 }
 
-func (bg *BackendGroup) ProxyWS(ctx context.Context, clientConn *websocket.Conn, methodWhitelist *StringSet) (*WSProxier, error) {
+func (bg *BackendGroup) ProxyWS(ctx context.Context, clientConn *websocket.Conn, xff string, methodWhitelist *StringSet, s *Server) (*WSProxier, error) {
 	backends := bg.orderedBackendsForRequest()
 
 	for _, back := range backends {
-		proxier, err := back.ProxyWS(clientConn, methodWhitelist)
+		proxier, err := back.ProxyWS(clientConn, xff, methodWhitelist, s)
 		if errors.Is(err, ErrBackendOffline) {
 			log.Warn(
 				"skipping offline backend",
@@ -943,7 +943,9 @@ func calcBackoff(i int) time.Duration {
 
 type WSProxier struct {
 	backend         *Backend
+	server          *Server
 	clientConn      *websocket.Conn
+	xff             string
 	clientConnMu    sync.Mutex
 	backendConn     *websocket.Conn
 	backendConnMu   sync.Mutex
@@ -952,10 +954,12 @@ type WSProxier struct {
 	writeTimeout    time.Duration
 }
 
-func NewWSProxier(backend *Backend, clientConn, backendConn *websocket.Conn, methodWhitelist *StringSet) *WSProxier {
+func NewWSProxier(backend *Backend, clientConn *websocket.Conn, xff string, backendConn *websocket.Conn, methodWhitelist *StringSet, s *Server) *WSProxier {
 	return &WSProxier{
 		backend:         backend,
+		server:          s,
 		clientConn:      clientConn,
+		xff:             xff,
 		backendConn:     backendConn,
 		methodWhitelist: methodWhitelist,
 		readTimeout:     defaultWSReadTimeout,
@@ -1002,6 +1006,7 @@ func (w *WSProxier) clientPump(ctx context.Context, errC chan error) {
 		// Don't bother sending invalid requests to the backend,
 		// just handle them here.
 		req, err := w.prepareClientMsg(msg)
+
 		if err != nil {
 			var id json.RawMessage
 			method := MethodUnknown
@@ -1031,6 +1036,56 @@ func (w *WSProxier) clientPump(ctx context.Context, errC chan error) {
 		if req.Method == "eth_accounts" {
 			msg = mustMarshalJSON(NewRPCRes(req.ID, emptyArrayResponse))
 			RecordRPCForward(ctx, BackendProxyd, "eth_accounts", RPCRequestSourceWS)
+			err = w.writeClientConn(msgType, msg)
+			if err != nil {
+				errC <- err
+				return
+			}
+			continue
+		}
+
+		// Rate limit
+		isLimited := func(method string) bool {
+			isGloballyLimitedMethod := w.server.isGlobalLimit(method)
+			if !isGloballyLimitedMethod {
+				return false
+			}
+
+			var lim FrontendRateLimiter
+			if method == "" {
+				lim = w.server.mainLim
+			} else {
+				lim = w.server.overrideLims[method]
+			}
+
+			if lim == nil {
+				return false
+			}
+
+			ok, err := lim.Take(ctx, w.xff)
+			if err != nil {
+				log.Warn("error taking rate limit", "err", err)
+				return true
+			}
+			return !ok
+		}
+
+		if isLimited("") {
+			var id json.RawMessage
+			method := MethodUnknown
+			if req != nil {
+				id = req.ID
+				method = req.Method
+			}
+			msg = mustMarshalJSON(NewRPCErrorRes(id, ErrOverRateLimit))
+			RecordRPCError(ctx, BackendProxyd, method, ErrOverRateLimit)
+			log.Warn(
+				"rate limited request",
+				"req_id", GetReqID(ctx),
+				"auth", GetAuthCtx(ctx),
+				"remote_ip", w.xff,
+				"type", "websocket",
+			)
 			err = w.writeClientConn(msgType, msg)
 			if err != nil {
 				errC <- err

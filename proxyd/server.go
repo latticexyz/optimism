@@ -595,6 +595,14 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 
 	log.Info("received WS connection", "req_id", GetReqID(ctx))
 
+	// Use XFF in context since it will automatically be replaced by the remote IP
+	xff := stripXFF(GetXForwardedFor(ctx))
+
+	if xff == "" {
+		writeRPCError(ctx, w, nil, ErrInvalidRequest("request does not include a remote IP"))
+		return
+	}
+
 	clientConn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Error("error upgrading client conn", "auth", GetAuthCtx(ctx), "req_id", GetReqID(ctx), "err", err)
@@ -602,7 +610,8 @@ func (s *Server) HandleWS(w http.ResponseWriter, r *http.Request) {
 	}
 	clientConn.SetReadLimit(s.maxBodySize)
 
-	proxier, err := s.wsBackendGroup.ProxyWS(ctx, clientConn, s.wsMethodWhitelist)
+	proxier, err := s.wsBackendGroup.ProxyWS(ctx, clientConn, xff, s.wsMethodWhitelist, s)
+
 	if err != nil {
 		if errors.Is(err, ErrNoBackends) {
 			RecordUnserviceableRequest(ctx, RPCRequestSourceWS)
