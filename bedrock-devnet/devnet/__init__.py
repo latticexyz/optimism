@@ -20,6 +20,7 @@ parser.add_argument('--monorepo-dir', help='Directory of the monorepo', default=
 parser.add_argument('--allocs', help='Only create the allocs and exit', type=bool, action=argparse.BooleanOptionalAction)
 parser.add_argument('--test', help='Tests the deployment, must already be deployed', type=bool, action=argparse.BooleanOptionalAction)
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 log = logging.getLogger()
 
 # Global constants
@@ -240,7 +241,7 @@ def devnet_deploy(paths):
 
     # Start the L2.
     log.info('Bringing up L2.')
-    run_command(['docker', 'compose', 'up', '-d', 'l2'], cwd=paths.ops_bedrock_dir, env={
+    run_command(['docker', 'compose', 'up', '-d', 'l2', 'op-reth'], cwd=paths.ops_bedrock_dir, env={
         'PWD': paths.ops_bedrock_dir
     })
 
@@ -286,7 +287,7 @@ def devnet_deploy(paths):
 
     # Bring up the rest of the services.
     log.info('Bringing up `op-node`, `op-proposer` and `op-batcher`.')
-    run_command(['docker', 'compose', 'up', '-d', 'op-node', 'op-proposer', 'op-batcher', 'artifact-server'], cwd=paths.ops_bedrock_dir, env=docker_env)
+    run_command(['docker', 'compose', 'up', '-d', 'op-node', 'op-node-reth', 'op-proposer', 'op-batcher', 'artifact-server'], cwd=paths.ops_bedrock_dir, env=docker_env)
 
     # Optionally bring up op-challenger.
     if not DEVNET_L2OO:
