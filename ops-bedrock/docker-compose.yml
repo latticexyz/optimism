@@ -31,28 +31,29 @@ services:
     environment:
       GETH_MINER_RECOMMIT: 100ms
 
-  l2:
-    build:
-      context: .
-      dockerfile: Dockerfile.l2
-    ports:
-      - "9545:8545"
-      - "8060:6060"
-    volumes:
-      - "l2_data:/db"
-      - "${PWD}/../.devnet/genesis-l2.json:/genesis.json"
-      - "${PWD}/test-jwt-secret.txt:/config/test-jwt-secret.txt"
-    entrypoint:  # pass the L2 specific flags by overriding the entry-point and adding extra arguments
-      - "/bin/sh"
-      - "/entrypoint.sh"
-      - "--authrpc.jwtsecret=/config/test-jwt-secret.txt"
-    environment:
-      GETH_MINER_RECOMMIT: 100ms
+  # l2:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.l2
+  #   ports:
+  #     - "9545:8545"
+  #     - "8060:6060"
+  #   volumes:
+  #     - "l2_data:/db"
+  #     - "${PWD}/../.devnet/genesis-l2.json:/genesis.json"
+  #     - "${PWD}/test-jwt-secret.txt:/config/test-jwt-secret.txt"
+  #   entrypoint:  # pass the L2 specific flags by overriding the entry-point and adding extra arguments
+  #     - "/bin/sh"
+  #     - "/entrypoint.sh"
+  #     - "--authrpc.jwtsecret=/config/test-jwt-secret.txt"
+  #   environment:
+  #     GETH_MINER_RECOMMIT: 100ms
 
-  op-reth:
+  l2:
     image: quarry/op-reth
     ports:
-      - "2545:8545"
+      - "9545:8545"
+      - "9546:8546"
     volumes:
       - "reth_data:/db"
       - "${PWD}/../.devnet/genesis-l2.json:/genesis.json"
@@ -78,7 +79,7 @@ services:
       op-node
       --l1=ws://l1:8546
       --l1.beacon.ignore
-      --l2=http://l2:8551
+      --l2=http://l2:9551
       --l2.jwt-secret=/config/test-jwt-secret.txt
       --sequencer.enabled
       --sequencer.l1-confs=0
@@ -115,47 +116,47 @@ services:
       - "${PWD}/../.devnet/rollup.json:/rollup.json"
       - op_log:/op_log
 
-  op-node-reth:
-    depends_on:
-      - l1
-      - op-reth
-    build:
-      context: ../
-      dockerfile: ops/docker/op-stack-go/Dockerfile
-      target: op-node-target
-    image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-node:devnet
-    command: >
-      op-node
-      --l1=ws://l1:8546
-      --l1.beacon.ignore
-      --l2=http://op-reth:9551
-      --l2.jwt-secret=/config/test-jwt-secret.txt
-      --sequencer.enabled=false
-      --verifier.l1-confs=0
-      --rollup.config=/rollup.json
-      --rpc.addr=0.0.0.0
-      --rpc.port=8545
-      --p2p.listen.ip=0.0.0.0
-      --p2p.listen.tcp=9003
-      --p2p.listen.udp=9003
-      --p2p.scoring.peers=light
-      --p2p.ban.peers=true
-      --p2p.priv.path=/config/p2p-node-key.txt
-      --p2p.static=/dns4/op-node/tcp/9003/p2p/16Uiu2HAmHqrXGts25TtKMBRHtvhWZLNypsobKoggpZye1XQtJpbZ
-      --metrics.enabled
-      --metrics.addr=0.0.0.0
-      --metrics.port=7300
-      --pprof.enabled
-      --rpc.enable-admin
-      --plasma.enabled=${PLASMA_ENABLED}
-      --plasma.da-service=${PLASMA_DA_SERVICE}
-      --plasma.da-server=http://da-server:3100
-    ports:
-      - "3545:8545"
-      - "9093:9003"
-    volumes:
-      - "${PWD}/test-jwt-secret.txt:/config/test-jwt-secret.txt"
-      - "${PWD}/../.devnet/rollup.json:/rollup.json"
+  # op-node-reth:
+  #   depends_on:
+  #     - l1
+  #     - op-reth
+  #   build:
+  #     context: ../
+  #     dockerfile: ops/docker/op-stack-go/Dockerfile
+  #     target: op-node-target
+  #   image: us-docker.pkg.dev/oplabs-tools-artifacts/images/op-node:devnet
+  #   command: >
+  #     op-node
+  #     --l1=ws://l1:8546
+  #     --l1.beacon.ignore
+  #     --l2=http://op-reth:9551
+  #     --l2.jwt-secret=/config/test-jwt-secret.txt
+  #     --sequencer.enabled=false
+  #     --verifier.l1-confs=0
+  #     --rollup.config=/rollup.json
+  #     --rpc.addr=0.0.0.0
+  #     --rpc.port=8545
+  #     --p2p.listen.ip=0.0.0.0
+  #     --p2p.listen.tcp=9003
+  #     --p2p.listen.udp=9003
+  #     --p2p.scoring.peers=light
+  #     --p2p.ban.peers=true
+  #     --p2p.priv.path=/config/p2p-node-key.txt
+  #     --p2p.static=/dns4/op-node/tcp/9003/p2p/16Uiu2HAmHqrXGts25TtKMBRHtvhWZLNypsobKoggpZye1XQtJpbZ
+  #     --metrics.enabled
+  #     --metrics.addr=0.0.0.0
+  #     --metrics.port=7300
+  #     --pprof.enabled
+  #     --rpc.enable-admin
+  #     --plasma.enabled=${PLASMA_ENABLED}
+  #     --plasma.da-service=${PLASMA_DA_SERVICE}
+  #     --plasma.da-server=http://da-server:3100
+  #   ports:
+  #     - "3545:8545"
+  #     - "9093:9003"
+  #   volumes:
+  #     - "${PWD}/test-jwt-secret.txt:/config/test-jwt-secret.txt"
+  #     - "${PWD}/../.devnet/rollup.json:/rollup.json"
 
   op-proposer:
     depends_on:
