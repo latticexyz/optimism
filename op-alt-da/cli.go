@@ -11,6 +11,7 @@ import (
 var (
 	EnabledFlagName               = altDAFlags("enabled")
 	DaServerAddressFlagName       = altDAFlags("da-server")
+	BatchedCommitmentsFlagName    = altDAFlags("batched-commitments")
 	VerifyOnReadFlagName          = altDAFlags("verify-on-read")
 	DaServiceFlagName             = altDAFlags("da-service")
 	PutTimeoutFlagName            = altDAFlags("put-timeout")
@@ -85,6 +86,7 @@ type CLIConfig struct {
 	DAServerURL           string
 	VerifyOnRead          bool
 	GenericDA             bool
+	BatchedCommitments    bool
 	PutTimeout            time.Duration
 	GetTimeout            time.Duration
 	MaxConcurrentRequests uint64
@@ -97,6 +99,9 @@ func (c CLIConfig) Check() error {
 		}
 		if _, err := url.Parse(c.DAServerURL); err != nil {
 			return fmt.Errorf("DA server URL is invalid: %w", err)
+		}
+		if c.BatchedCommitments && c.GenericDA {
+			return fmt.Errorf("Batched commitments not available for GenericDA")
 		}
 	}
 	return nil
@@ -112,6 +117,7 @@ func ReadCLIConfig(c *cli.Context) CLIConfig {
 		DAServerURL:           c.String(DaServerAddressFlagName),
 		VerifyOnRead:          c.Bool(VerifyOnReadFlagName),
 		GenericDA:             c.Bool(DaServiceFlagName),
+		BatchedCommitments:    c.Bool(BatchedCommitmentsFlagName),
 		PutTimeout:            c.Duration(PutTimeoutFlagName),
 		GetTimeout:            c.Duration(GetTimeoutFlagName),
 		MaxConcurrentRequests: c.Uint64(MaxConcurrentRequestsFlagName),

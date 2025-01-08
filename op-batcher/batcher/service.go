@@ -228,6 +228,10 @@ func (bs *BatcherService) initChannelConfig(cfg *CLIConfig) error {
 		}
 		cc.UseBlobs = true
 	case flags.CalldataType: // do nothing
+		// TODO: we probably want to use another config option to enable batches
+		if cfg.AltDA.BatchedCommitments {
+			cc.UseBatchedCommitments = true
+		}
 	default:
 		return fmt.Errorf("unknown data availability type: %v", cfg.DataAvailabilityType)
 	}
