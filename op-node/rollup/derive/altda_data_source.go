@@ -20,7 +20,8 @@ type AltDADataSource struct {
 	l1      L1Fetcher
 	id      eth.L1BlockRef
 	// keep track of a pending commitment so we can keep trying to fetch the input.
-	comm altda.CommitmentData
+	comms []altda.CommitmentData
+	commIdx int
 }
 
 func NewAltDADataSource(log log.Logger, src DataIter, l1 L1Fetcher, fetcher AltDAInputFetcher, id eth.L1BlockRef) *AltDADataSource {
@@ -45,7 +46,7 @@ func (s *AltDADataSource) Next(ctx context.Context) (eth.Data, error) {
 		return nil, NewTemporaryError(fmt.Errorf("failed to advance altDA L1 origin: %w", err))
 	}
 
-	if s.comm == nil {
+	if s.commIdx >= len(s.comms) {
 		// the l1 source returns the input commitment for the batch.
 		data, err := s.src.Next(ctx)
 		if err != nil {
@@ -63,15 +64,19 @@ func (s *AltDADataSource) Next(ctx context.Context) (eth.Data, error) {
 
 		// validate batcher inbox data is a commitment.
 		// strip the transaction data version byte from the data before decoding.
-		comm, err := altda.DecodeCommitmentData(data[1:])
+		comms, err := altda.DecodeMultipleCommitmentData(data[1:])
 		if err != nil {
 			s.log.Warn("invalid commitment", "commitment", data, "err", err)
 			return nil, NotEnoughData
 		}
-		s.comm = comm
+		s.comms = comms
+		s.commIdx = 0
 	}
+
+	currComm := s.comms[s.commIdx]
+
 	// use the commitment to fetch the input from the AltDA provider.
-	data, err := s.fetcher.GetInput(ctx, s.l1, s.comm, s.id)
+	data, err := s.fetcher.GetInput(ctx, s.l1, currComm, s.id)
 	// GetInput may call for a reorg if the pipeline is stalled and the AltDA manager
 	// continued syncing origins detached from the pipeline origin.
 	if errors.Is(err, altda.ErrReorgRequired) {
@@ -79,26 +84,28 @@ func (s *AltDADataSource) Next(ctx context.Context) (eth.Data, error) {
 		return nil, NewResetError(err)
 	} else if errors.Is(err, altda.ErrExpiredChallenge) {
 		// this commitment was challenged and the challenge expired.
-		s.log.Warn("challenge expired, skipping batch", "comm", s.comm)
-		s.comm = nil
+		s.log.Warn("challenge expired, skipping batch", "comm", currComm)
+        // skip only this commitment by incrementing index
+		s.commIdx++
 		// skip the input
 		return s.Next(ctx)
 	} else if errors.Is(err, altda.ErrMissingPastWindow) {
-		return nil, NewCriticalError(fmt.Errorf("data for comm %s not available: %w", s.comm, err))
+		return nil, NewCriticalError(fmt.Errorf("data for comm %s not available: %w", currComm, err))
 	} else if errors.Is(err, altda.ErrPendingChallenge) {
 		// continue stepping without slowing down.
 		return nil, NotEnoughData
 	} else if err != nil {
 		// return temporary error so we can keep retrying.
-		return nil, NewTemporaryError(fmt.Errorf("failed to fetch input data with comm %s from da service: %w", s.comm, err))
+		return nil, NewTemporaryError(fmt.Errorf("failed to fetch input data with comm %s from da service: %w", currComm, err))
 	}
 	// inputs are limited to a max size to ensure they can be challenged in the DA contract.
-	if s.comm.CommitmentType() == altda.Keccak256CommitmentType && len(data) > altda.MaxInputSize {
+	if currComm.CommitmentType() == altda.Keccak256CommitmentType && len(data) > altda.MaxInputSize {
 		s.log.Warn("input data exceeds max size", "size", len(data), "max", altda.MaxInputSize)
-		s.comm = nil
+        // skip only this commitment by incrementing index
+		s.commIdx++
 		return s.Next(ctx)
 	}
-	// reset the commitment so we can fetch the next one from the source at the next iteration.
-	s.comm = nil
+	// advance to next commitment so we start from it (or fetch a new one if we iterated through the whole array.
+    s.commIdx++
 	return data, nil
 }

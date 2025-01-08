@@ -86,6 +86,51 @@ func DecodeCommitmentData(input []byte) (CommitmentData, error) {
 	}
 }
 
+
+func DecodeMultipleCommitmentData(input []byte) ([]CommitmentData, error) {
+	if len(input) == 0 {
+		return nil, ErrInvalidCommitment
+	}
+	t := CommitmentType(input[0])
+	data := input[1:]
+	switch t {
+	case Keccak256CommitmentType:
+		// guard against empty commitments
+		if len(data) == 0 {
+			return nil, ErrInvalidCommitment
+		}
+
+		// For keccak, we expect multiples of 32
+        if len(data)%32 != 0 {
+            return nil, fmt.Errorf(
+                "keccak256 commitments length must be multiple of 32, got %d",
+                len(data),
+            )
+        }
+
+        numCommits := len(data) / 32
+        results := make([]CommitmentData, 0, numCommits)
+        for i := 0; i < numCommits; i++ {
+            chunk := data[i*32 : (i+1)*32]
+            k, err := DecodeKeccak256(chunk)
+            if err != nil {
+                return nil, fmt.Errorf("decode keccak256 at index %d: %w", i, err)
+            }
+            results = append(results, k)
+        }
+        return results, nil
+	case GenericCommitmentType:
+		// For generic, just parse everything into a single commitment
+        g, err := DecodeGenericCommitment(data)
+        if err != nil {
+            return nil, err
+        }
+        return []CommitmentData{g}, nil
+	default:
+		return nil, ErrInvalidCommitment
+	}
+}
+
 // NewKeccak256Commitment creates a new commitment from the given input.
 func NewKeccak256Commitment(input []byte) Keccak256Commitment {
 	return Keccak256Commitment(crypto.Keccak256(input))

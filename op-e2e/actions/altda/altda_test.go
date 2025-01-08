@@ -177,6 +177,24 @@ func (a *L2AltDA) ActNewL2Tx(t helpers.Testing) {
 	a.lastCommBn = a.miner.L1Chain().CurrentBlock().Number.Uint64()
 }
 
+// TODO: Include new tx (and block), but without submitting commitment ?
+func (a *L2AltDA) ActNewL2TxBatched(t helpers.Testing) {
+	a.ActSequencerIncludeTx(t)
+
+	a.batcher.ActL2BatchBuffer(t)
+	a.batcher.ActL2ChannelClose(t)
+	a.batcher.ActL2BatchSubmit(t, func(tx *types.DynamicFeeTx) {
+		// skip txdata version byte
+		a.lastComm = tx.Data[1:]
+	})
+
+	a.miner.ActL1StartBlock(12)(t)
+	a.miner.ActL1IncludeTx(a.dp.Addresses.Batcher)(t)
+	a.miner.ActL1EndBlock(t)
+
+	a.lastCommBn = a.miner.L1Chain().CurrentBlock().Number.Uint64()
+}
+
 func (a *L2AltDA) ActDeleteLastInput(t helpers.Testing) {
 	require.NoError(t, a.storage.Client.DeleteData(a.lastComm))
 }
