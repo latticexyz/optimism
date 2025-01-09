@@ -86,7 +86,6 @@ func DecodeCommitmentData(input []byte) (CommitmentData, error) {
 	}
 }
 
-
 func DecodeMultipleCommitmentData(input []byte) ([]CommitmentData, error) {
 	if len(input) == 0 {
 		return nil, ErrInvalidCommitment
