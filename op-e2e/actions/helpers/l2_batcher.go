@@ -61,6 +61,8 @@ type BatcherCfg struct {
 	ForceSubmitSingularBatch bool
 	ForceSubmitSpanBatch     bool
 	UseAltDA                 bool
+	UseBatchedCommitments    bool
+	TargetNumFrames          uint64
 
 	DataAvailabilityType batcherFlags.DataAvailabilityType
 	AltDA                AltDAInputSetter
@@ -83,6 +85,19 @@ func AltDABatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *Batcher
 		DataAvailabilityType: batcherFlags.CalldataType,
 		AltDA:                altDA,
 		UseAltDA:             true,
+	}
+}
+
+func BatchedCommsBatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *BatcherCfg {
+	return &BatcherCfg{
+		MinL1TxSize:          0,
+		MaxL1TxSize:          128_000,
+		BatcherKey:           dp.Secrets.Batcher,
+		DataAvailabilityType: batcherFlags.CalldataType,
+		AltDA:                altDA,
+		UseAltDA:             true,
+		UseBatchedCommitments:true,
+		TargetNumFrames:      2, // Use max 2 frames per batch
 	}
 }
 
@@ -312,6 +327,90 @@ func (s *L2Batcher) ReadNextOutputFrame(t Testing) []byte {
 // ActL2BatchSubmit constructs a batch tx from previous buffered L2 blocks, and submits it to L1
 func (s *L2Batcher) ActL2BatchSubmit(t Testing, txOpts ...func(tx *types.DynamicFeeTx)) {
 	s.ActL2BatchSubmitRaw(t, s.ReadNextOutputFrame(t), txOpts...)
+}
+
+func (s *L2Batcher) ActL2SubmitBatchedCommitments(t Testing, numFrames int, txOpts ...func(tx *types.DynamicFeeTx)) {
+	if !s.l2BatcherCfg.UseAltDA {
+		t.InvalidAction("ActL2SubmitBatchedCommitments only available for Alt DA type")
+		return
+	}
+
+	if !s.l2BatcherCfg.UseBatchedCommitments {
+		t.InvalidAction("ActL2SubmitBatchedCommitments only available if using BatchedCommitments")
+		return
+	}
+
+	if s.L2ChannelOut == nil {
+		t.InvalidAction("need to buffer data first, cannot batch submit with empty buffer")
+		return
+	}
+
+	frames := make([][]byte, numFrames)
+	for i := 0; i < numFrames; i++ {
+		if s.L2ChannelOut == nil {
+			break
+		}
+		data := new(bytes.Buffer)
+		data.WriteByte(derive_params.DerivationVersion0)
+		// subtract one, to account for the version byte
+		if _, err := s.L2ChannelOut.OutputFrame(data, s.l2BatcherCfg.MaxL1TxSize-1); err == io.EOF {
+			s.l2Submitting = false
+			if i < numFrames - 1 {
+				t.Fatalf("failed read %d frames, only read %d", numFrames, i+1)
+			}
+			s.L2ChannelOut = nil
+		} else if err != nil {
+			s.l2Submitting = false
+			t.Fatalf("failed to output channel data to frame: %v", err)
+		}
+
+		frames[i] = data.Bytes()
+	}
+
+	batchedCalldata := make([][]byte, len(frames))
+	for i, f := range frames {
+		batchedCalldata[i] = append([]byte{derive_params.DerivationVersion0}, f...)
+	}
+
+	batchedComm := []byte{derive_params.DerivationVersion1}
+	for _, calldata := range batchedCalldata {
+		comm, err := s.l2BatcherCfg.AltDA.SetInput(t.Ctx(), calldata)
+		require.NoError(t, err, "failed to set input for altda")
+		batchedComm = append(batchedComm, comm.Encode()...)
+	}
+
+	nonce, err := s.l1.PendingNonceAt(t.Ctx(), s.BatcherAddr)
+	require.NoError(t, err, "need batcher nonce")
+
+	gasTipCap := big.NewInt(2 * params.GWei)
+	pendingHeader, err := s.l1.HeaderByNumber(t.Ctx(), big.NewInt(-1))
+	require.NoError(t, err, "need l1 pending header for gas price estimation")
+	gasFeeCap := new(big.Int).Add(gasTipCap, new(big.Int).Mul(pendingHeader.BaseFee, big.NewInt(2)))
+
+	var txData types.TxData
+	rawTx := &types.DynamicFeeTx{
+		ChainID:   s.rollupCfg.L1ChainID,
+		Nonce:     nonce,
+		To:        &s.rollupCfg.BatchInboxAddress,
+		GasTipCap: gasTipCap,
+		GasFeeCap: gasFeeCap,
+		Data:      batchedComm,
+	}
+	for _, opt := range txOpts {
+		opt(rawTx)
+	}
+
+	gas, err := core.IntrinsicGas(rawTx.Data, nil, false, true, true, false)
+	require.NoError(t, err, "need to compute intrinsic gas")
+	rawTx.Gas = gas
+	txData = rawTx
+
+	tx, err := types.SignNewTx(s.l2BatcherCfg.BatcherKey, s.l1Signer, txData)
+	require.NoError(t, err, "need to sign tx")
+
+	err = s.l1.SendTransaction(t.Ctx(), tx)
+	require.NoError(t, err, "need to send tx")
+	s.LastSubmitted = tx
 }
 
 func (s *L2Batcher) ActL2BatchSubmitRaw(t Testing, payload []byte, txOpts ...func(tx *types.DynamicFeeTx)) {
