@@ -3,7 +3,6 @@ package helpers
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"io"
