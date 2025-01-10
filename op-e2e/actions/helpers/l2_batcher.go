@@ -3,6 +3,7 @@ package helpers
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"io"
@@ -343,7 +344,8 @@ func (s *L2Batcher) ActL2SubmitBatchedCommitments(t Testing, numFrames int, txOp
 		return
 	}
 
-	frames := make([][]byte, numFrames)
+	// Load and encode the commitment content (1 frame per commitment)
+	batchedCalldata := make([][]byte, numFrames)
 	for i := 0; i < numFrames; i++ {
 		if s.L2ChannelOut == nil {
 			break
@@ -362,15 +364,10 @@ func (s *L2Batcher) ActL2SubmitBatchedCommitments(t Testing, numFrames int, txOp
 			t.Fatalf("failed to output channel data to frame: %v", err)
 		}
 
-		frames[i] = data.Bytes()
-		s.log.Debug("frame len", "len", len(frames[i]))
+		batchedCalldata[i] = data.Bytes()
 	}
 
-	batchedCalldata := make([][]byte, len(frames))
-	for i, f := range frames {
-		batchedCalldata[i] = append([]byte{derive_params.DerivationVersion0}, f...)
-	}
-
+	// Iterate over encoded frames and set the input for the da client
 	batchedComm := []byte{derive_params.DerivationVersion1, byte(altda.Keccak256CommitmentType)}
 	for _, calldata := range batchedCalldata {
 		comm, err := s.l2BatcherCfg.AltDA.SetInput(t.Ctx(), calldata)

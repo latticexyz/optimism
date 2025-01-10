@@ -1,7 +1,6 @@
 package altda
 
 import (
-	"errors"
 	"math/rand"
 	"math/big"
 	"testing"
@@ -20,7 +19,6 @@ import (
 	altda "github.com/ethereum-optimism/optimism/op-alt-da"
 	"github.com/ethereum-optimism/optimism/op-alt-da/bindings"
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
-	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
@@ -116,58 +114,53 @@ func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing) {
 
 	rng := rand.New(rand.NewSource(555))
 
-	// build 2 L2 blocks filled with large txs of random data
-	for i := 0; i < 1; i++ {
-		aliceNonce, err := cl.PendingNonceAt(t.Ctx(), a.dp.Addresses.Alice)
-		status := a.sequencer.SyncStatus()
-		// build empty L1 blocks as necessary, so the L2 sequencer can continue to include txs while not drifting too far out
-		if status.UnsafeL2.Time >= status.HeadL1.Time+12 {
-			a.miner.ActEmptyBlock(t)
-		}
-		a.sequencer.ActL1HeadSignal(t)
-		a.sequencer.ActL2StartBlock(t)
-		baseFee := a.engine.L2Chain().CurrentBlock().BaseFee
-		// fill the block with large L2 txs from alice
-		for n := aliceNonce; ; n++ {
-			require.NoError(t, err)
-			signer := types.LatestSigner(a.sd.L2Cfg.Config)
-			data := make([]byte, 120_000) // very large L2 txs, as large as the tx-pool will accept
-			_, err := rng.Read(data[:])   // fill with random bytes, to make compression ineffective
-			require.NoError(t, err)
-			gas, err := core.IntrinsicGas(data, nil, false, true, true, false)
-			require.NoError(t, err)
-			if gas > a.engine.EngineApi.RemainingBlockGas() {
-				break
-			}
-			tx := types.MustSignNewTx(a.dp.Secrets.Alice, signer, &types.DynamicFeeTx{
-				ChainID:   a.sd.L2Cfg.Config.ChainID,
-				Nonce:     n,
-				GasTipCap: big.NewInt(2 * params.GWei),
-				GasFeeCap: new(big.Int).Add(new(big.Int).Mul(baseFee, big.NewInt(2)), big.NewInt(2*params.GWei)),
-				Gas:       gas,
-				To:        &a.dp.Addresses.Bob,
-				Value:     big.NewInt(0),
-				Data:      data,
-			})
-			require.NoError(t, cl.SendTransaction(t.Ctx(), tx))
-			a.engine.ActL2IncludeTx(a.dp.Addresses.Alice)(t)
-		}
-		a.sequencer.ActL2EndBlock(t)
+	// build an L2 block with 2 large txs of random data (each should take a whole frame)
+	aliceNonce, err := cl.PendingNonceAt(t.Ctx(), a.dp.Addresses.Alice)
+	status := a.sequencer.SyncStatus()
+	// build empty L1 blocks as necessary, so the L2 sequencer can continue to include txs while not drifting too far out
+	if status.UnsafeL2.Time >= status.HeadL1.Time+12 {
+		a.miner.ActEmptyBlock(t)
 	}
-
-	for a.batcher.L2BufferedBlock.Number < a.sequencer.SyncStatus().UnsafeL2.Number {
-		a.log.Info("buffering")
-		// Buffer as much as possible until we hit an error
-		err := a.batcher.Buffer(t)
-		// Only process if we hit a space-related error
-		if errors.Is(err, derive.ErrTooManyRLPBytes) || errors.Is(err, derive.ErrCompressorFull) {
-			log.Info("flushing filled channel to batch txs", "id", a.batcher.L2ChannelOut.ID())
-			a.batcher.ActL2ChannelClose(t)
+	a.sequencer.ActL1HeadSignal(t)
+	a.sequencer.ActL2StartBlock(t)
+	baseFee := a.engine.L2Chain().CurrentBlock().BaseFee
+	// add 2 large L2 txs from alice
+	for n := uint64(0); n < 2 ; n++ {
+		require.NoError(t, err)
+		signer := types.LatestSigner(a.sd.L2Cfg.Config)
+		data := make([]byte, 120_000) // very large L2 txs, as large as the tx-pool will accept
+		_, err := rng.Read(data[:])   // fill with random bytes, to make compression ineffective
+		require.NoError(t, err)
+		gas, err := core.IntrinsicGas(data, nil, false, true, true, false)
+		require.NoError(t, err)
+		if gas > a.engine.EngineApi.RemainingBlockGas() {
 			break
 		}
+		tx := types.MustSignNewTx(a.dp.Secrets.Alice, signer, &types.DynamicFeeTx{
+			ChainID:   a.sd.L2Cfg.Config.ChainID,
+			Nonce:     n + aliceNonce,
+			GasTipCap: big.NewInt(2 * params.GWei),
+			GasFeeCap: new(big.Int).Add(new(big.Int).Mul(baseFee, big.NewInt(2)), big.NewInt(2*params.GWei)),
+			Gas:       gas,
+			To:        &a.dp.Addresses.Bob,
+			Value:     big.NewInt(0),
+			Data:      data,
+		})
+		require.NoError(t, cl.SendTransaction(t.Ctx(), tx))
+		a.engine.ActL2IncludeTx(a.dp.Addresses.Alice)(t)
+	}
+	a.sequencer.ActL2EndBlock(t)
+
+	// This should buffer 1 block, which will be consumed as 2 frames because of the size
+	for a.batcher.L2BufferedBlock.Number < a.sequencer.SyncStatus().UnsafeL2.Number {
+		err := a.batcher.Buffer(t)
+		require.NoError(t, err)
 	}
 
-	// Batch 2 commitments
+	// close the channel
+	a.batcher.ActL2ChannelClose(t)
+
+	// Batch submit 2 commitments
 	a.batcher.ActL2SubmitBatchedCommitments(t, 2, func(tx *types.DynamicFeeTx) {
 		// skip txdata version byte, and only store the first commitment (33 bytes) for simplicity
 		// data = <DerivationVersion1> + <CommitmentType> + hash1 + hash2 + ...
@@ -193,25 +186,11 @@ func TestAltDABatched_Derivation(gt *testing.T) {
 
 	harness.ActSubmitBatchedCommitments(t)
 
-	// Send a head signal to the sequencer and verifier
-	// harness.sequencer.ActL1HeadSignal(t)
+	// Send a head signal to the verifier
 	verifier.ActL1HeadSignal(t)
 
-	// Run the derivation pipeline on the sequencer and verifier
-	// harness.sequencer.ActL2PipelineFull(t)
 	verifier.ActL2PipelineFull(t)
 
-	// Build the L2 chain to the L1 head
-	// harness.sequencer.ActBuildToL1Head(t)
-
-	// syncStatus := harness.sequencer.SyncStatus()
-
-	// verifier.ActL2PipelineFull(t)
-	// verifier.ActL1FinalizedSignal(t)
-
-	// verifSyncStatus := verifier.SyncStatus()
-
-	// require.Equal(t, syncStatus.FinalizedL2, verifSyncStatus.FinalizedL2)
 	require.Equal(t, harness.sequencer.SyncStatus().UnsafeL2, verifier.SyncStatus().SafeL2, "verifier synced sequencer data even though of huge tx in block")
 }
 
