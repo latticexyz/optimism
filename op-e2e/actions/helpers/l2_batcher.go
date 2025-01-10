@@ -62,7 +62,6 @@ type BatcherCfg struct {
 	ForceSubmitSpanBatch     bool
 	UseAltDA                 bool
 	UseBatchedCommitments    bool
-	TargetNumFrames          uint64
 
 	DataAvailabilityType batcherFlags.DataAvailabilityType
 	AltDA                AltDAInputSetter
@@ -97,7 +96,6 @@ func BatchedCommsBatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *
 		AltDA:                altDA,
 		UseAltDA:             true,
 		UseBatchedCommitments:true,
-		TargetNumFrames:      2, // Use max 2 frames per batch
 	}
 }
 
@@ -365,6 +363,7 @@ func (s *L2Batcher) ActL2SubmitBatchedCommitments(t Testing, numFrames int, txOp
 		}
 
 		frames[i] = data.Bytes()
+		s.log.Debug("frame len", "len", len(frames[i]))
 	}
 
 	batchedCalldata := make([][]byte, len(frames))
@@ -372,11 +371,13 @@ func (s *L2Batcher) ActL2SubmitBatchedCommitments(t Testing, numFrames int, txOp
 		batchedCalldata[i] = append([]byte{derive_params.DerivationVersion0}, f...)
 	}
 
-	batchedComm := []byte{derive_params.DerivationVersion1}
+	batchedComm := []byte{derive_params.DerivationVersion1, byte(altda.Keccak256CommitmentType)}
 	for _, calldata := range batchedCalldata {
 		comm, err := s.l2BatcherCfg.AltDA.SetInput(t.Ctx(), calldata)
 		require.NoError(t, err, "failed to set input for altda")
-		batchedComm = append(batchedComm, comm.Encode()...)
+		// Strip away the commitment type as we are already including it
+		// TODO: this should be abstracted away somehow
+		batchedComm = append(batchedComm, comm.Encode()[1:]...)
 	}
 
 	nonce, err := s.l1.PendingNonceAt(t.Ctx(), s.BatcherAddr)

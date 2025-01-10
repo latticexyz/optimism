@@ -1,6 +1,7 @@
 package altda
 
 import (
+	"errors"
 	"math/rand"
 	"math/big"
 	"testing"
@@ -19,6 +20,7 @@ import (
 	altda "github.com/ethereum-optimism/optimism/op-alt-da"
 	"github.com/ethereum-optimism/optimism/op-alt-da/bindings"
 	"github.com/ethereum-optimism/optimism/op-e2e/e2eutils"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
 	"github.com/ethereum-optimism/optimism/op-service/sources"
 	"github.com/ethereum-optimism/optimism/op-service/testlog"
 )
@@ -27,6 +29,7 @@ import (
 
 type AltDAParamBatched func(p *e2eutils.TestParams)
 
+// Same as altda_test.go, but with a batched batcher config
 func NewL2AltDABatched(t helpers.Testing, params ...AltDAParamBatched) *L2AltDA {
 	p := &e2eutils.TestParams{
 		MaxSequencerDrift:   40,
@@ -108,64 +111,107 @@ func NewL2AltDABatched(t helpers.Testing, params ...AltDAParamBatched) *L2AltDA 
 	}
 }
 
-func TestAltDABatched_Derivation(gt *testing.T) {
-	t := helpers.NewDefaultTesting(gt)
-	harness := NewL2AltDABatched(t)
-
-	harness.ActL1Blocks(t, 5)
-
-	cl := harness.engine.EthClient()
+func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing) {
+	cl := a.engine.EthClient()
 
 	rng := rand.New(rand.NewSource(555))
 
 	// build 2 L2 blocks filled with large txs of random data
-	for i := 0; i < 20; i++ {
-		aliceNonce, err := cl.PendingNonceAt(t.Ctx(), harness.dp.Addresses.Alice)
-		status := harness.sequencer.SyncStatus()
+	for i := 0; i < 1; i++ {
+		aliceNonce, err := cl.PendingNonceAt(t.Ctx(), a.dp.Addresses.Alice)
+		status := a.sequencer.SyncStatus()
 		// build empty L1 blocks as necessary, so the L2 sequencer can continue to include txs while not drifting too far out
 		if status.UnsafeL2.Time >= status.HeadL1.Time+12 {
-			harness.miner.ActEmptyBlock(t)
+			a.miner.ActEmptyBlock(t)
 		}
-		harness.sequencer.ActL1HeadSignal(t)
-		harness.sequencer.ActL2StartBlock(t)
-		baseFee := harness.engine.L2Chain().CurrentBlock().BaseFee
+		a.sequencer.ActL1HeadSignal(t)
+		a.sequencer.ActL2StartBlock(t)
+		baseFee := a.engine.L2Chain().CurrentBlock().BaseFee
 		// fill the block with large L2 txs from alice
 		for n := aliceNonce; ; n++ {
 			require.NoError(t, err)
-			signer := types.LatestSigner(harness.sd.L2Cfg.Config)
+			signer := types.LatestSigner(a.sd.L2Cfg.Config)
 			data := make([]byte, 120_000) // very large L2 txs, as large as the tx-pool will accept
 			_, err := rng.Read(data[:])   // fill with random bytes, to make compression ineffective
 			require.NoError(t, err)
 			gas, err := core.IntrinsicGas(data, nil, false, true, true, false)
 			require.NoError(t, err)
-			if gas > harness.engine.EngineApi.RemainingBlockGas() {
+			if gas > a.engine.EngineApi.RemainingBlockGas() {
 				break
 			}
-			tx := types.MustSignNewTx(harness.dp.Secrets.Alice, signer, &types.DynamicFeeTx{
-				ChainID:   harness.sd.L2Cfg.Config.ChainID,
+			tx := types.MustSignNewTx(a.dp.Secrets.Alice, signer, &types.DynamicFeeTx{
+				ChainID:   a.sd.L2Cfg.Config.ChainID,
 				Nonce:     n,
 				GasTipCap: big.NewInt(2 * params.GWei),
 				GasFeeCap: new(big.Int).Add(new(big.Int).Mul(baseFee, big.NewInt(2)), big.NewInt(2*params.GWei)),
 				Gas:       gas,
-				To:        &harness.dp.Addresses.Bob,
+				To:        &a.dp.Addresses.Bob,
 				Value:     big.NewInt(0),
 				Data:      data,
 			})
 			require.NoError(t, cl.SendTransaction(t.Ctx(), tx))
-			harness.engine.ActL2IncludeTx(harness.dp.Addresses.Alice)(t)
+			a.engine.ActL2IncludeTx(a.dp.Addresses.Alice)(t)
 		}
-		harness.sequencer.ActL2EndBlock(t)
+		a.sequencer.ActL2EndBlock(t)
 	}
 
-	harness.batcher.ActL2SubmitBatchedCommitments(t, 1, func(tx *types.DynamicFeeTx) {
-		// skip txdata version byte
-		harness.lastComm = tx.Data[1:]
+	for a.batcher.L2BufferedBlock.Number < a.sequencer.SyncStatus().UnsafeL2.Number {
+		a.log.Info("buffering")
+		// Buffer as much as possible until we hit an error
+		err := a.batcher.Buffer(t)
+		// Only process if we hit a space-related error
+		if errors.Is(err, derive.ErrTooManyRLPBytes) || errors.Is(err, derive.ErrCompressorFull) {
+			log.Info("flushing filled channel to batch txs", "id", a.batcher.L2ChannelOut.ID())
+			a.batcher.ActL2ChannelClose(t)
+			break
+		}
+	}
+
+	// Batch 2 commitments
+	a.batcher.ActL2SubmitBatchedCommitments(t, 2, func(tx *types.DynamicFeeTx) {
+		// skip txdata version byte, and only store the first commitment (33 bytes) for simplicity
+		// data = <DerivationVersion1> + <CommitmentType> + hash1 + hash2 + ...
+		a.log.Info("Full commitment length", "len(tx.Data)", len(tx.Data))
+		a.lastComm = tx.Data[1:34]
 	})
 
-	harness.miner.ActL1StartBlock(12)(t)
-	harness.miner.ActL1IncludeTx(harness.dp.Addresses.Batcher)(t)
-	harness.miner.ActL1EndBlock(t)
+	// Include batched commitments in L1 block
+	a.miner.ActL1StartBlock(12)(t)
+	a.miner.ActL1IncludeTx(a.dp.Addresses.Batcher)(t)
+	a.miner.ActL1EndBlock(t)
 
-	harness.lastCommBn = harness.miner.L1Chain().CurrentBlock().Number.Uint64()
+	a.lastCommBn = a.miner.L1Chain().CurrentBlock().Number.Uint64()
+}
+
+
+func TestAltDABatched_Derivation(gt *testing.T) {
+	t := helpers.NewDefaultTesting(gt)
+	harness := NewL2AltDABatched(t)
+	verifier := harness.NewVerifier(t)
+
+	verifier.ActL2PipelineFull(t)
+
+	harness.ActSubmitBatchedCommitments(t)
+
+	// Send a head signal to the sequencer and verifier
+	// harness.sequencer.ActL1HeadSignal(t)
+	verifier.ActL1HeadSignal(t)
+
+	// Run the derivation pipeline on the sequencer and verifier
+	// harness.sequencer.ActL2PipelineFull(t)
+	verifier.ActL2PipelineFull(t)
+
+	// Build the L2 chain to the L1 head
+	// harness.sequencer.ActBuildToL1Head(t)
+
+	// syncStatus := harness.sequencer.SyncStatus()
+
+	// verifier.ActL2PipelineFull(t)
+	// verifier.ActL1FinalizedSignal(t)
+
+	// verifSyncStatus := verifier.SyncStatus()
+
+	// require.Equal(t, syncStatus.FinalizedL2, verifSyncStatus.FinalizedL2)
+	require.Equal(t, harness.sequencer.SyncStatus().UnsafeL2, verifier.SyncStatus().SafeL2, "verifier synced sequencer data even though of huge tx in block")
 }
 

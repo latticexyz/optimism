@@ -85,7 +85,6 @@ func (c *DAClient) SetInput(ctx context.Context, img []byte) (CommitmentData, er
 
 	// let DA server generate commitment
 	return c.setInput(ctx, img)
-
 }
 
 // setInputWithCommit sets a precomputed commitment for some pre-image data.
