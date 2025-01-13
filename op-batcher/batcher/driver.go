@@ -782,16 +782,16 @@ func (l *BatchSubmitter) publishToAltDAAndL1(txdata txData, queue *txmgr.Queue[t
 	// since it may take a while for the request to return.
 	// TODO: new goroutine for each commitment?
 	goroutineSpawned := daGroup.TryGo(func() error {
-		// TODO: don't use batched calldata for generic commitments?
-		var comms []altda.CommitmentData
+		inputs := l.prepareAltDAInputs(txdata)
 
+		var comms []altda.CommitmentData
 		// Get the calldata for each frame
-		for _, calldata := range txdata.BatchedCallData() {
+		for _, input := range inputs {
 			// TODO: probably shouldn't be using the global shutdownCtx here, see https://go.dev/blog/context-and-structs
 			// but sendTransaction receives l.killCtx as an argument, which currently is only canceled after waiting for the main loop
 			// to exit, which would wait on this DA call to finish, which would take a long time.
 			// So we prefer to mimic the behavior of txmgr and cancel all pending DA/txmgr requests when the batcher is stopped.
-			comm, err := l.AltDA.SetInput(l.shutdownCtx, calldata)
+			comm, err := l.AltDA.SetInput(l.shutdownCtx, input)
 			if err != nil {
 				// Don't log context cancelled events because they are expected,
 				// and can happen after tests complete which causes a panic.
@@ -822,7 +822,6 @@ func (l *BatchSubmitter) publishToAltDAAndL1(txdata txData, queue *txmgr.Queue[t
 			calldata = comms[0].TxData()
 		}
 
-
 		candidate := l.calldataTxCandidate(calldata)
 		l.sendTx(txdata, false, candidate, queue, receiptsCh)
 		return nil
@@ -833,6 +832,15 @@ func (l *BatchSubmitter) publishToAltDAAndL1(txdata txData, queue *txmgr.Queue[t
 		// return it for later processing. We use nil error to skip error logging.
 		l.recordFailedDARequest(txdata.ID(), nil)
 	}
+}
+
+func (l *BatchSubmitter) prepareAltDAInputs(txdata txData) [][]byte {
+	// TODO: don't use batched calldata for generic commitments?
+	if len(txdata.frames) <= 1 {
+		return [][]byte{txdata.CallData()}
+	}
+
+	return txdata.BatchedCallData()
 }
 
 // sendTransaction creates & queues for sending a transaction to the batch inbox address with the given `txData`.
