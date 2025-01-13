@@ -108,19 +108,11 @@ func NewL2AltDABatched(t helpers.Testing, params ...AltDAParamBatched) *L2AltDA 
 	}
 }
 
-func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing) {
+func (a *L2AltDA) ActSequencerIncludeBigTxs(t helpers.Testing, n int) {
 	rng := rand.New(rand.NewSource(555))
 
-	// build an L2 block with 2 large txs of random data (each should take a whole frame)
-	// aliceNonce, err := cl.PendingNonceAt(t.Ctx(), a.dp.Addresses.Alice)
-	status := a.sequencer.SyncStatus()
-	// build empty L1 blocks as necessary, so the L2 sequencer can continue to include txs while not drifting too far out
-	if status.UnsafeL2.Time >= status.HeadL1.Time+12 {
-		a.miner.ActEmptyBlock(t)
-	}
-	a.sequencer.ActL1HeadSignal(t)
 	a.sequencer.ActL2StartBlock(t)
-	// add 2 large L2 txs from alice
+	// build an L2 block with n large txs of random data (each should take a whole frame)
 	for n := 0; n < 2 ; n++ {
 		data := make([]byte, 120_000) // very large L2 txs, as large as the tx-pool will accept
 		_, err := rng.Read(data[:])   // fill with random bytes, to make compression ineffective
@@ -133,25 +125,29 @@ func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing) {
 		a.engine.ActL2IncludeTx(a.alice.Address())(t)
 	}
 	a.sequencer.ActL2EndBlock(t)
+}
+
+func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing, n int) {
+	a.ActSequencerIncludeBigTxs(t, n)
 
 	// This should buffer 1 block, which will be consumed as 2 frames because of the size
-	// err := a.batcher.Buffer(t)
-	// require.NoError(t, err)
 	a.batcher.ActBufferAll(t)
 
 	// close the channel
 	a.batcher.ActL2ChannelClose(t)
 
 	// Batch submit 2 commitments
-	a.batcher.ActL2SubmitBatchedCommitments(t, 2, func(tx *types.DynamicFeeTx) {
+	a.batcher.ActL2SubmitBatchedCommitments(t, n, func(tx *types.DynamicFeeTx) {
 		// skip txdata version byte, and only store the second commitment (33 bytes)
 		// data = <DerivationVersion1> + <CommitmentType> + hash1 + hash2 + ...
 		numCommitments := len(tx.Data[2:]) / 32
+		require.Equal(t, numCommitments, n)
 		a.log.Debug("New batched commitments", "numCommitments", numCommitments)
-		for i := 0; i < numCommitments; i++ {
+		for i := 0; i < n; i++ {
 			a.log.Debug("Commitment", "index", i, "hash", common.Bytes2Hex(tx.Data[2+i*32:2+(i+1)*32]))
 		}
-		a.lastComm = append([]byte{byte(altda.Keccak256CommitmentType)}, tx.Data[34:]...)
+		// Store last commitment
+		a.lastComm = append([]byte{byte(altda.Keccak256CommitmentType)}, tx.Data[2+(n-1)*32:]...)
 	})
 
 	// Include batched commitments in L1 block
@@ -168,7 +164,7 @@ func TestAltDABatched_Derivation(gt *testing.T) {
 	harness := NewL2AltDABatched(t)
 	verifier := harness.NewVerifier(t)
 
-	harness.ActSubmitBatchedCommitments(t)
+	harness.ActSubmitBatchedCommitments(t, 2)
 
 	// Send a head signal to the verifier
 	verifier.ActL1HeadSignal(t)
@@ -190,7 +186,7 @@ func TestAltDABatched_ChallengeExpired(gt *testing.T) {
 	harness.ActL1Blocks(t, 5)
 
 	// Include a new l2 transaction, submitting an 2 batched commitments to the l1.
-	harness.ActSubmitBatchedCommitments(t)
+	harness.ActSubmitBatchedCommitments(t, 2)
 
 	// Challenge the input commitment on the l1 challenge contract.
 	harness.ActChallengeLastInput(t)
@@ -243,7 +239,7 @@ func TestAltDABatched_ChallengeResolved(gt *testing.T) {
 	t := helpers.NewDefaultTesting(gt)
 	harness := NewL2AltDABatched(t)
 
-	harness.ActSubmitBatchedCommitments(t)
+	harness.ActSubmitBatchedCommitments(t, 2)
 
 	// generate 3 l1 blocks.
 	harness.ActL1Blocks(t, 3)
@@ -286,7 +282,7 @@ func TestAltDABatched_StorageError(gt *testing.T) {
 	t := helpers.NewDefaultTesting(gt)
 	harness := NewL2AltDABatched(t)
 
-	harness.ActSubmitBatchedCommitments(t)
+	harness.ActSubmitBatchedCommitments(t, 2)
 
 	txBlk := harness.GetLastTxBlock(t)
 
@@ -310,7 +306,7 @@ func TestAltDABatched_ChallengeReorg(gt *testing.T) {
 	t := helpers.NewDefaultTesting(gt)
 	harness := NewL2AltDABatched(t)
 
-	harness.ActSubmitBatchedCommitments(t)
+	harness.ActSubmitBatchedCommitments(t, 2)
 
 	// add a buffer of L1 blocks
 	harness.ActL1Blocks(t, 3)
@@ -353,7 +349,7 @@ func TestAltDABatched_SequencerStalledMultiChallenges(gt *testing.T) {
 	t := helpers.NewDefaultTesting(gt)
 	a := NewL2AltDABatched(t)
 
-	a.ActSubmitBatchedCommitments(t)
+	a.ActSubmitBatchedCommitments(t, 2)
 
 	// keep track of the related commitment (second batched commitment)
 	comm1 := a.lastComm

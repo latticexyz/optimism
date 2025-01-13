@@ -107,11 +107,15 @@ func DecodeMultipleCommitmentData(input []byte) ([]CommitmentData, error) {
             )
         }
 
-		results := make([]CommitmentData, len(data)/32)
-		for i := range results {
-			results[i] = Keccak256Commitment(data[i*32 : (i+1)*32])
+		comms := make([]CommitmentData, len(data)/32)
+		for i := range comms {
+			k, err := DecodeKeccak256(data[i*32 : (i+1)*32])
+			if err != nil {
+				return nil, err
+			}
+			comms[i] = k
 		}
-		return results, nil
+		return comms, nil
 	case GenericCommitmentType:
 		// For generic, just parse everything into a single commitment
         g, err := DecodeGenericCommitment(data)
