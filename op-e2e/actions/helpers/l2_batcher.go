@@ -365,12 +365,14 @@ func (s *L2Batcher) ActL2SubmitBatchedCommitments(t Testing, numFrames int, txOp
 
 		batchedCalldata[i] = data.Bytes()
 	}
+	s.log.Debug("Number of commitments to batch", "len", len(batchedCalldata))
 
 	// Iterate over encoded frames and set the input for the da client
 	batchedComm := []byte{derive_params.DerivationVersion1, byte(altda.Keccak256CommitmentType)}
 	for _, calldata := range batchedCalldata {
 		comm, err := s.l2BatcherCfg.AltDA.SetInput(t.Ctx(), calldata)
 		require.NoError(t, err, "failed to set input for altda")
+		s.log.Debug("Set input for", "commitment", common.Bytes2Hex(comm.Encode()))
 		// Strip away the commitment type as we are already including it
 		// TODO: this should be abstracted away somehow
 		batchedComm = append(batchedComm, comm.Encode()[1:]...)

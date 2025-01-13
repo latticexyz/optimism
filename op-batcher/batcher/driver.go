@@ -783,16 +783,10 @@ func (l *BatchSubmitter) publishToAltDAAndL1(txdata txData, queue *txmgr.Queue[t
 	// TODO: new goroutine for each commitment?
 	goroutineSpawned := daGroup.TryGo(func() error {
 		// TODO: don't use batched calldata for generic commitments?
-		var batchedCalldata [][]byte
 		var comms []altda.CommitmentData
 
-		if len(txdata.frames) > 1 {
-			batchedCalldata = txdata.BatchedCallData()
-		} else {
-			batchedCalldata = [][]byte{txdata.CallData()}
-		}
-
-		for _, calldata := range batchedCalldata {
+		// Get the calldata for each frame
+		for _, calldata := range txdata.BatchedCallData() {
 			// TODO: probably shouldn't be using the global shutdownCtx here, see https://go.dev/blog/context-and-structs
 			// but sendTransaction receives l.killCtx as an argument, which currently is only canceled after waiting for the main loop
 			// to exit, which would wait on this DA call to finish, which would take a long time.
@@ -816,20 +810,20 @@ func (l *BatchSubmitter) publishToAltDAAndL1(txdata txData, queue *txmgr.Queue[t
 			comms = append(comms, comm)
 		}
 
-		// TODO: abstract this away
-		comm := []byte{params.DerivationVersion1}
+		var calldata []byte
 		if len(comms) > 1 {
-			comm = append(comm, byte(altda.Keccak256CommitmentType))
+			batchedComm := make([]byte, 0, len(comms)*32)
 			for _, c := range comms {
 				// TODO: check that these are actually keccak256 commitments
-				comm = append(comm, c.Encode()[1:]...)
+				batchedComm = append(batchedComm, c.Encode()[1:]...)
 			}
+			calldata = altda.Keccak256Commitment(batchedComm).TxData()
 		} else {
-			comm = append(comm, comms[0].Encode()...)
+			calldata = comms[0].TxData()
 		}
 
 
-		candidate := l.calldataTxCandidate(comm)
+		candidate := l.calldataTxCandidate(calldata)
 		l.sendTx(txdata, false, candidate, queue, receiptsCh)
 		return nil
 	})

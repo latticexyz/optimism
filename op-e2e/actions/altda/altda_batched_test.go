@@ -135,8 +135,9 @@ func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing) {
 	a.sequencer.ActL2EndBlock(t)
 
 	// This should buffer 1 block, which will be consumed as 2 frames because of the size
-	err := a.batcher.Buffer(t)
-	require.NoError(t, err)
+	// err := a.batcher.Buffer(t)
+	// require.NoError(t, err)
+	a.batcher.ActBufferAll(t)
 
 	// close the channel
 	a.batcher.ActL2ChannelClose(t)
@@ -145,7 +146,11 @@ func (a *L2AltDA) ActSubmitBatchedCommitments(t helpers.Testing) {
 	a.batcher.ActL2SubmitBatchedCommitments(t, 2, func(tx *types.DynamicFeeTx) {
 		// skip txdata version byte, and only store the second commitment (33 bytes)
 		// data = <DerivationVersion1> + <CommitmentType> + hash1 + hash2 + ...
-		a.log.Info("Full commitment length", "len(tx.Data)", len(tx.Data))
+		numCommitments := len(tx.Data[2:]) / 32
+		a.log.Debug("New batched commitments", "numCommitments", numCommitments)
+		for i := 0; i < numCommitments; i++ {
+			a.log.Debug("Commitment", "index", i, "hash", common.Bytes2Hex(tx.Data[2+i*32:2+(i+1)*32]))
+		}
 		a.lastComm = append([]byte{byte(altda.Keccak256CommitmentType)}, tx.Data[34:]...)
 	})
 
@@ -408,22 +413,28 @@ func TestAltDABatched_SequencerStalledMultiChallenges(gt *testing.T) {
 	// ensure the second commitment is distinct from the first
 	require.NotEqual(t, comm1, comm2)
 
+	a.log.Debug("BEFORE FIRST CHALLENGE")
 	// challenge the last commitment while the pipeline is stuck on the first
 	a.ActChallengeLastInput(t)
 
-	// resolve the latest commitment before the first one is event challenged.
+	a.log.Debug("BEFORE RESOLVE 1")
+	// resolve the latest commitment before the first one is even challenged.
 	a.ActResolveLastChallenge(t)
 
+	a.log.Debug("BEFORE SECOND DELETE")
 	// now we delete it to force the pipeline to resolve the second commitment
 	// from the challenge data.
 	a.ActDeleteLastInput(t)
 
+	a.log.Debug("BEFORE SECOND CHALLENGE")
 	// finally challenge the first commitment
 	a.ActChallengeInput(t, comm1, bn1)
 
+	a.log.Debug("BEFORE RESOLVE 2")
 	// resolve it immediately so we can resume derivation
 	a.ActResolveInput(t, comm1, input1, bn1)
 
+	a.log.Debug("BEFORE SEQUENCER PIPELINE")
 	// pipeline can go on
 	a.sequencer.ActL2PipelineFull(t)
 
