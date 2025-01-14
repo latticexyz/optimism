@@ -2,13 +2,13 @@
 pragma solidity 0.8.15;
 
 // Contracts
-import { OwnableUpgradeable } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 // Libraries
-import { SafeCall } from "src/libraries/SafeCall.sol";
+import {SafeCall} from "src/libraries/SafeCall.sol";
 
 // Interfaces
-import { ISemver } from "interfaces/universal/ISemver.sol";
+import {ISemver} from "interfaces/universal/ISemver.sol";
 
 /// @dev An enum representing the status of a DA challenge.
 enum ChallengeStatus {
@@ -20,8 +20,24 @@ enum ChallengeStatus {
 
 /// @dev An enum representing known commitment types.
 enum CommitmentType {
+    Keccak256,
+    Generic
+}
+
+enum GenericCommitmentType {
     Keccak256
 }
+
+function toByte(GenericCommitmentType self) pure returns (bytes1) {
+    if (self == GenericCommitmentType.Keccak256) {
+        return 0xff;
+    }
+    // Should never happen unless we add new GenericCommitmentTypes
+    assert(false);
+    return 0;
+}
+
+using {toByte} for GenericCommitmentType;
 
 /// @dev A struct representing a single DA challenge.
 /// @custom:field challenger The address that initiated the challenge.
@@ -73,6 +89,9 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @notice Error for when a the type of a given commitment is unknown
     error UnknownCommitmentType(uint8 commitmentType);
 
+    /// @notice Error for when a the subtype of a given generic commitment is unknown
+    error UnknownGenericCommitmentType(uint8 genericCommitmentType);
+
     /// @notice Error for when the commitment length does not match the commitment type
     error InvalidCommitmentLength(uint8 commitmentType, uint256 expectedLength, uint256 actualLength);
 
@@ -96,6 +115,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
     /// @notice Semantic version.
     /// @custom:semver 1.0.1-beta.5
+    // TODO: update version
     string public constant version = "1.0.1-beta.5";
 
     /// @notice The fixed cost of resolving a challenge.
@@ -145,10 +165,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
         uint256 _resolveWindow,
         uint256 _bondSize,
         uint256 _resolverRefundPercentage
-    )
-        external
-        initializer
-    {
+    ) external initializer {
         __Ownable_init();
         challengeWindow = _challengeWindow;
         resolveWindow = _resolveWindow;
@@ -221,10 +238,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param _challengedBlockNumber The block number at which the commitment was made.
     /// @param _challengedCommitment The commitment that is being challenged.
     /// @return The challenge struct.
-    function getChallenge(
-        uint256 _challengedBlockNumber,
-        bytes calldata _challengedCommitment
-    )
+    function getChallenge(uint256 _challengedBlockNumber, bytes calldata _challengedCommitment)
         public
         view
         returns (Challenge memory)
@@ -236,10 +250,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param _challengedBlockNumber The block number at which the commitment was made.
     /// @param _challengedCommitment The commitment that is being challenged.
     /// @return The status of the challenge.
-    function getChallengeStatus(
-        uint256 _challengedBlockNumber,
-        bytes calldata _challengedCommitment
-    )
+    function getChallengeStatus(uint256 _challengedBlockNumber, bytes calldata _challengedCommitment)
         public
         view
         returns (ChallengeStatus)
@@ -262,8 +273,21 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @dev The commitment type is located in the first byte of the commitment.
     /// @param _commitment The commitment from which to extract the commitment type.
     /// @return The commitment type of the given commitment.
-    function _getCommitmentType(bytes calldata _commitment) internal pure returns (uint8) {
-        return uint8(bytes1(_commitment));
+    function _getCommitmentType(bytes calldata _commitment) internal pure returns (CommitmentType) {
+        return CommitmentType(_getFirstByte(_commitment));
+    }
+
+    function _getGenericCommitmentType(bytes calldata _commitment) internal pure returns (GenericCommitmentType) {
+        uint8 t = _getFirstByte(_commitment[1:]);
+        if (bytes1(t) == GenericCommitmentType.Keccak256.toByte()) {
+            return GenericCommitmentType.Keccak256;
+        }
+
+        revert UnknownGenericCommitmentType(t);
+    }
+
+    function _getFirstByte(bytes calldata _data) internal pure returns (uint8) {
+        return uint8(bytes1(_data));
     }
 
     /// @notice Validate that a given commitment has a known type and the expected length for this type.
@@ -272,15 +296,25 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     ///      with `InvalidCommitmentLength` if the commitment has an unexpected length.
     /// @param _commitment The commitment for which to check the type.
     function validateCommitment(bytes calldata _commitment) public pure {
-        uint8 commitmentType = _getCommitmentType(_commitment);
-        if (commitmentType == uint8(CommitmentType.Keccak256)) {
+        CommitmentType commitmentType = _getCommitmentType(_commitment);
+        if (commitmentType == CommitmentType.Keccak256) {
             if (_commitment.length != 33) {
                 revert InvalidCommitmentLength(uint8(CommitmentType.Keccak256), 33, _commitment.length);
             }
             return;
+        } else if (commitmentType == CommitmentType.Generic) {
+            // _getGenericCommitmentType reverts if it is an unknown type
+            GenericCommitmentType genericCommitmentType = _getGenericCommitmentType(_commitment);
+            if (genericCommitmentType == GenericCommitmentType.Keccak256) {
+                // At least 2 bytes + hashes
+                if (_commitment.length < 34 || (_commitment.length - 2) % 32 != 0) {
+                    revert InvalidCommitmentLength(uint8(CommitmentType.Generic), 34, _commitment.length);
+                }
+            }
+            return;
         }
 
-        revert UnknownCommitmentType(commitmentType);
+        revert UnknownCommitmentType(uint8(commitmentType));
     }
 
     /// @notice Challenge a commitment at a given block number.
@@ -317,7 +351,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
         // store the challenger's address, bond size, and start block of the challenge
         challenges[_challengedBlockNumber][_challengedCommitment] =
-            Challenge({ challenger: msg.sender, lockedBond: bondSize, startBlock: block.number, resolvedBlock: 0 });
+            Challenge({challenger: msg.sender, lockedBond: bondSize, startBlock: block.number, resolvedBlock: 0});
 
         // emit an event to notify that the challenge status is now active
         emit ChallengeStatusChanged(_challengedBlockNumber, _challengedCommitment, ChallengeStatus.Active);
@@ -331,11 +365,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param _challengedBlockNumber The block number at which the commitment was made.
     /// @param _challengedCommitment The challenged commitment that is being resolved.
     /// @param _resolveData The pre-image data corresponding to the challenged commitment.
-    function resolve(
-        uint256 _challengedBlockNumber,
-        bytes calldata _challengedCommitment,
-        bytes calldata _resolveData
-    )
+    function resolve(uint256 _challengedBlockNumber, bytes calldata _challengedCommitment, bytes calldata _resolveData)
         external
     {
         // require the commitment type to be known
@@ -346,17 +376,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
             revert ChallengeNotActive();
         }
 
-        // compute the commitment corresponding to the given resolveData
-        uint8 commitmentType = _getCommitmentType(_challengedCommitment);
-        bytes memory computedCommitment;
-        if (commitmentType == uint8(CommitmentType.Keccak256)) {
-            computedCommitment = computeCommitmentKeccak256(_resolveData);
-        }
-
-        // require the provided input data to correspond to the challenged commitment
-        if (keccak256(computedCommitment) != keccak256(_challengedCommitment)) {
-            revert InvalidInputData(computedCommitment, _challengedCommitment);
-        }
+        validateCommitmentResolution(_challengedCommitment, _resolveData);
 
         // store the block number at which the challenge was resolved
         Challenge storage activeChallenge = challenges[_challengedBlockNumber][_challengedCommitment];
@@ -367,6 +387,28 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 
         // distribute the bond among challenger, resolver and address(0)
         _distributeBond(activeChallenge, _resolveData.length, msg.sender);
+    }
+
+    function validateCommitmentResolution(bytes calldata _challengedCommitment, bytes calldata _resolveData)
+        public
+        pure
+    {
+        // compute the commitment corresponding to the given resolveData
+        CommitmentType commitmentType = _getCommitmentType(_challengedCommitment);
+        bytes memory computedCommitment;
+        if (commitmentType == CommitmentType.Keccak256) {
+            computedCommitment = computeCommitmentKeccak256(_resolveData);
+        } else if (commitmentType == CommitmentType.Generic) {
+            GenericCommitmentType genericCommitmentType = _getGenericCommitmentType(_challengedCommitment);
+            if (genericCommitmentType == GenericCommitmentType.Keccak256) {
+                computedCommitment = computeCommitmentGenericKeccak256(_resolveData);
+            }
+        }
+
+        // require the provided input data to correspond to the challenged commitment
+        if (keccak256(computedCommitment) != keccak256(_challengedCommitment)) {
+            revert InvalidInputData(computedCommitment, _challengedCommitment);
+        }
     }
 
     /// @notice Distribute the bond of a resolved challenge among the resolver, challenger and address(0).
@@ -381,11 +423,7 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
     /// @param _resolvedChallenge The resolved challenge in storage.
     /// @param _preImageLength The size of the pre-image used to resolve the challenge.
     /// @param _resolver The address of the resolver.
-    function _distributeBond(
-        Challenge storage _resolvedChallenge,
-        uint256 _preImageLength,
-        address _resolver
-    )
+    function _distributeBond(Challenge storage _resolvedChallenge, uint256 _preImageLength, address _resolver)
         internal
     {
         uint256 lockedBond = _resolvedChallenge.lockedBond;
@@ -447,4 +485,9 @@ contract DataAvailabilityChallenge is OwnableUpgradeable, ISemver {
 /// @return The commitment for the given blob of data.
 function computeCommitmentKeccak256(bytes memory _data) pure returns (bytes memory) {
     return bytes.concat(bytes1(uint8(CommitmentType.Keccak256)), keccak256(_data));
+}
+
+function computeCommitmentGenericKeccak256(bytes memory _data) pure returns (bytes memory) {
+    return
+        bytes.concat(bytes1(uint8(CommitmentType.Generic)), GenericCommitmentType.Keccak256.toByte(), keccak256(_data));
 }
