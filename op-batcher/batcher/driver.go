@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum-optimism/optimism/op-batcher/metrics"
 	"github.com/ethereum-optimism/optimism/op-node/rollup"
 	"github.com/ethereum-optimism/optimism/op-node/rollup/derive"
+	"github.com/ethereum-optimism/optimism/op-node/rollup/derive/params"
 	"github.com/ethereum-optimism/optimism/op-service/dial"
 	"github.com/ethereum-optimism/optimism/op-service/eth"
 	"github.com/ethereum-optimism/optimism/op-service/txmgr"
@@ -811,7 +812,7 @@ func (l *BatchSubmitter) publishToAltDAAndL1(txdata txData, queue *txmgr.Queue[t
 
 		var calldata []byte
 		if len(comms) > 1 {
-			batchedComm := make([]byte, 0, len(comms)*32)
+			batchedComm := []byte{params.DerivationVersion1, byte(altda.Keccak256CommitmentType)}
 			for _, c := range comms {
 				// TODO: check that these are actually keccak256 commitments
 				batchedComm = append(batchedComm, c.Encode()[1:]...)
