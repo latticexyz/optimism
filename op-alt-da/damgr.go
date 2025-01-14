@@ -242,6 +242,10 @@ func (d *DA) GetInput(ctx context.Context, l1 L1Fetcher, comm CommitmentData, bl
 		case ChallengeResolved:
 			// Generic Commitments don't resolve from L1 so if we still can't find the data we're out of luck
 			if comm.CommitmentType() == GenericCommitmentType {
+				if comm.(GenericCommitment).DALayer() == Keccak256DALayer {
+					ch, _ := d.state.GetChallenge(comm, blockId.Number)
+					return ch.input, nil
+				}
 				return nil, ErrMissingPastWindow
 			}
 			// Keccak commitments resolve from L1, so we should have the data in the challenge resolved input
@@ -363,6 +367,7 @@ func (d *DA) loadChallengeEvents(ctx context.Context, l1 L1Fetcher, block eth.Bl
 			}
 
 			var input []byte
+			// TODO: maybe we don't need to change this for Generic commitments, as we don't have a generic way to verify the input
 			if d.cfg.CommitmentType == Keccak256CommitmentType {
 				// Decode the input from resolver tx calldata
 				input, err = DecodeResolvedInput(tx.Data())
@@ -397,6 +402,8 @@ func (d *DA) loadChallengeEvents(ctx context.Context, l1 L1Fetcher, block eth.Bl
 func (d *DA) fetchChallengeLogs(ctx context.Context, l1 L1Fetcher, block eth.BlockID) ([]*types.Log, error) {
 	var logs []*types.Log
 	// Don't look at the challenge contract if there is no challenge contract.
+	// TODO: figure out how to decide if logs should be fetched (Challenge contract set, or new cfg parameter)
+	// if d.cfg.CommitmentType == GenericCommitmentType && d.cfg.DAChallengeContractAddress == ZeroAddress {
 	if d.cfg.CommitmentType == GenericCommitmentType {
 		return logs, nil
 	}
