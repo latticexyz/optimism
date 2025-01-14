@@ -69,7 +69,14 @@ func (s *AltDADataSource) Next(ctx context.Context) (eth.Data, error) {
 			s.log.Warn("invalid commitment", "commitment", data, "err", err)
 			return nil, NotEnoughData
 		}
-		s.comms = comms
+
+		if batchedComm, ok := comm.(altda.GenericBatchedCommitmentData); ok {
+			// The commitment implements GenericBatchedCommitmentData
+			s.comms = batchedComm.GetBatchedCommitments()
+		} else {
+			// The commitment does not implement GenericBatchedCommitmentData
+			s.comms = []altda.CommitmentData{comm}
+		}
 		s.commIdx = 0
 	}
 

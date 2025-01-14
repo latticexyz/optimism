@@ -61,7 +61,7 @@ type GenericCommitmentData interface {
 
 type GenericBatchedCommitmentData interface {
 	GenericCommitmentData
-	GetBatchedCommitments() ([]CommitmentData, error)
+	GetBatchedCommitments() []CommitmentData
 }
 
 // Keccak256Commitment is an implementation of CommitmentData that uses Keccak256 as the commitment function.
@@ -257,7 +257,7 @@ func (c GenericKeccak256Commitment) String() string {
 }
 
 // GetBatchedCommitments returns all individual commitments contained in the commitment
-func (c GenericKeccak256Commitment) GetBatchedCommitments() ([]CommitmentData, error) {
+func (c GenericKeccak256Commitment) GetBatchedCommitments() []CommitmentData {
 	numCommitments := (len(c) - 1) / 32
 	comms := make([]CommitmentData, numCommitments)
 
@@ -271,7 +271,7 @@ func (c GenericKeccak256Commitment) GetBatchedCommitments() ([]CommitmentData, e
 		comms[i] = GenericKeccak256Commitment(comm)
 	}
 
-	return comms, nil
+	return comms
 }
 
 func (c GenericKeccak256Commitment) DALayer() DALayer {
