@@ -54,6 +54,16 @@ type CommitmentData interface {
 	String() string
 }
 
+type GenericCommitmentData interface {
+	CommitmentData
+	DALayer() DALayer
+}
+
+type GenericBatchedCommitmentData interface {
+	GenericCommitmentData
+	GetBatchedCommitments() ([]CommitmentData, error)
+}
+
 // Keccak256Commitment is an implementation of CommitmentData that uses Keccak256 as the commitment function.
 type Keccak256Commitment []byte
 
@@ -220,7 +230,7 @@ func DecodeGenericKeccak256Commitment(commitment []byte) (GenericKeccak256Commit
 
 
 func (c GenericKeccak256Commitment) CommitmentType() CommitmentType {
-	return GenericCommitmentType
+	return GenericCommitment(c).CommitmentType()
 }
 
 func (c GenericKeccak256Commitment) Encode() []byte {
@@ -264,3 +274,6 @@ func (c GenericKeccak256Commitment) GetBatchedCommitments() ([]CommitmentData, e
 	return comms, nil
 }
 
+func (c GenericKeccak256Commitment) DALayer() DALayer {
+	return GenericCommitment(c).DALayer()
+}
