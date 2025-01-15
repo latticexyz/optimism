@@ -210,10 +210,11 @@ func DecodeGenericKeccak256Commitment(commitment []byte) (GenericKeccak256Commit
 		return nil, ErrInvalidCommitment
 	}
 	if DALayer(commitment[0]) != Keccak256DALayer {
-		return nil, fmt.Errorf("invalid DA layer for Keccak256 commitment: %d", commitment[0])
+		return nil, fmt.Errorf("invalid DA layer for Generic Keccak256 commitment: %d", commitment[0])
 	}
+	// Strip the DALayer byte
 	if (len(commitment)-1)%32 != 0 {
-		return nil, fmt.Errorf("invalid length for Keccak256 commitment: %d", len(commitment))
+		return nil, fmt.Errorf("invalid length for Generic Keccak256 commitment: %d", len(commitment))
 	}
 	return GenericKeccak256Commitment(commitment), nil
 }
@@ -243,7 +244,7 @@ func (c GenericKeccak256Commitment) Verify(input []byte) error {
 
 // String provides a custom string representation
 func (c GenericKeccak256Commitment) String() string {
-	return "keccak256:" + hex.EncodeToString(c)
+	return hex.EncodeToString(c.Encode())
 }
 
 // GetBatchedCommitments returns all individual commitments contained in the commitment

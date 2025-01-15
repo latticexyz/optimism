@@ -25,13 +25,14 @@ type KVStore interface {
 }
 
 type DAServer struct {
-	log            log.Logger
-	endpoint       string
-	store          KVStore
-	tls            *rpc.ServerTLSConfig
-	httpServer     *http.Server
-	listener       net.Listener
-	useGenericComm bool
+	log                 log.Logger
+	endpoint            string
+	store               KVStore
+	tls                 *rpc.ServerTLSConfig
+	httpServer          *http.Server
+	listener            net.Listener
+	useGenericComm      bool
+	DALayer             DALayer
 }
 
 func NewDAServer(host string, port int, store KVStore, log log.Logger, useGenericComm bool) *DAServer {
@@ -44,6 +45,20 @@ func NewDAServer(host string, port int, store KVStore, log log.Logger, useGeneri
 			Addr: endpoint,
 		},
 		useGenericComm: useGenericComm,
+	}
+}
+
+func NewDAServerWithDALayer(host string, port int, store KVStore, log log.Logger, useGenericComm bool, DALayer DALayer) *DAServer {
+	endpoint := net.JoinHostPort(host, strconv.Itoa(port))
+	return &DAServer{
+		log:      log,
+		endpoint: endpoint,
+		store:    store,
+		httpServer: &http.Server{
+			Addr: endpoint,
+		},
+		useGenericComm: useGenericComm,
+		DALayer: DALayer,
 	}
 }
 
@@ -142,7 +157,13 @@ func (d *DAServer) HandlePut(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/put" || r.URL.Path == "/put/" { // without commitment
 		var comm []byte
 		if d.useGenericComm {
-			comm = NewGenericCommitment(input).Encode()
+			switch d.DALayer {
+				case Keccak256DALayer:
+					comm = NewGenericKeccak256Commitment(input).Encode()
+					break;
+				default:
+					comm = NewGenericCommitment(input).Encode()
+			}
 		} else {
 			comm = NewKeccak256Commitment(input).Encode()
 		}

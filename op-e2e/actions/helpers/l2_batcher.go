@@ -89,13 +89,13 @@ func AltDABatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *Batcher
 
 func AltDAGenericCommsBatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *BatcherCfg {
 	return &BatcherCfg{
-		MinL1TxSize:			0,
-		MaxL1TxSize:			128_000,
-		BatcherKey:				dp.Secrets.Batcher,
-		DataAvailabilityType:	batcherFlags.CalldataType,
-		AltDA:					altDA,
-		UseAltDA:				true,
-		UseGenericCommitments:	true,
+		MinL1TxSize:           0,
+		MaxL1TxSize:           128_000,
+		BatcherKey:            dp.Secrets.Batcher,
+		DataAvailabilityType:  batcherFlags.CalldataType,
+		AltDA:                 altDA,
+		UseAltDA:              true,
+		UseGenericCommitments: true,
 	}
 }
 
@@ -438,15 +438,17 @@ func (s *L2Batcher) ActL2SubmitGenericCommitments(t Testing, numFrames int, txOp
 	s.log.Debug("Number of commitments to batch", "len", len(batchedCalldata))
 
 	// Iterate over encoded frames and set the input for the da client
-	batchedComm := []byte{derive_params.DerivationVersion1, byte(altda.GenericCommitmentType)}
+	batchedComm := []byte{byte(altda.Keccak256DALayer)}
 	for _, calldata := range batchedCalldata {
 		comm, err := s.l2BatcherCfg.AltDA.SetInput(t.Ctx(), calldata)
 		require.NoError(t, err, "failed to set input for altda")
 		s.log.Debug("Set input for", "commitment", common.Bytes2Hex(comm.Encode()))
 		// Strip away the commitment type as we are already including it
 		// TODO: this should be abstracted away somehow
-		batchedComm = append(batchedComm, comm.Encode()[1:]...)
+		batchedComm = append(batchedComm, comm.Encode()[2:]...)
 	}
+
+	calldata := altda.GenericKeccak256Commitment(batchedComm).TxData()
 
 	nonce, err := s.l1.PendingNonceAt(t.Ctx(), s.BatcherAddr)
 	require.NoError(t, err, "need batcher nonce")
@@ -463,7 +465,7 @@ func (s *L2Batcher) ActL2SubmitGenericCommitments(t Testing, numFrames int, txOp
 		To:        &s.rollupCfg.BatchInboxAddress,
 		GasTipCap: gasTipCap,
 		GasFeeCap: gasFeeCap,
-		Data:      batchedComm,
+		Data:      calldata,
 	}
 	for _, opt := range txOpts {
 		opt(rawTx)

@@ -19,13 +19,15 @@ import (
 // in unit tests.
 type MockDAClient struct {
 	CommitmentType CommitmentType
+	DALayer        DALayer
 	store          ethdb.KeyValueStore
 	log            log.Logger
 }
 
-func NewMockGenericDAClient(log log.Logger) *MockDAClient {
+func NewMockGenericDAClient(log log.Logger, DALayer DALayer) *MockDAClient {
 	return &MockDAClient{
 		CommitmentType: GenericCommitmentType,
+		DALayer:        DALayer,
 		store:          memorydb.New(),
 		log:            log,
 	}
@@ -48,7 +50,13 @@ func (c *MockDAClient) GetInput(ctx context.Context, key CommitmentData) ([]byte
 }
 
 func (c *MockDAClient) SetInput(ctx context.Context, data []byte) (CommitmentData, error) {
-	key := NewCommitmentData(c.CommitmentType, data)
+	var key CommitmentData
+	// TODO: improve the way we differentiate between generic commitments in general
+	if c.DALayer == Keccak256DALayer {
+		key = NewGenericKeccak256Commitment(data)
+	} else {
+		key = NewCommitmentData(c.CommitmentType, data)
+	}
 	return key, c.store.Put(key.Encode(), data)
 }
 
@@ -125,6 +133,16 @@ func NewFakeDAServer(host string, port int, log log.Logger) *FakeDAServer {
 	store := NewMemStore()
 	fakeDAServer := &FakeDAServer{
 		DAServer:          NewDAServer(host, port, store, log, true),
+		putRequestLatency: 0,
+		getRequestLatency: 0,
+	}
+	return fakeDAServer
+}
+
+func NewFakeDAServerWithDALayer(host string, port int, log log.Logger, DALayer DALayer) *FakeDAServer {
+	store := NewMemStore()
+	fakeDAServer := &FakeDAServer{
+		DAServer:          NewDAServerWithDALayer(host, port, store, log, true, DALayer),
 		putRequestLatency: 0,
 		getRequestLatency: 0,
 	}

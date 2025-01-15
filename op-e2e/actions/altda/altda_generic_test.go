@@ -54,7 +54,7 @@ func NewL2AltDAGeneric(t helpers.Testing, params ...AltDAParamGeneric) *L2AltDA 
 	engine := helpers.NewL2Engine(t, log, sd.L2Cfg, jwtPath)
 	engCl := engine.EngineClient(t, sd.RollupCfg)
 
-	storage := &altda.DAErrFaker{Client: altda.NewMockDAClient(log)}
+	storage := &altda.DAErrFaker{Client: altda.NewMockGenericDAClient(log, altda.Keccak256DALayer)}
 
 	l1F, err := sources.NewL1Client(miner.RPCClient(), log, nil, sources.L1ClientDefaultConfig(sd.RollupCfg, false, sources.RPCKindBasic))
 	require.NoError(t, err)
@@ -139,16 +139,17 @@ func (a *L2AltDA) ActSubmitGenericCommitments(t helpers.Testing, n int) {
 
 	// Batch submit 2 commitments
 	a.batcher.ActL2SubmitGenericCommitments(t, n, func(tx *types.DynamicFeeTx) {
-		// skip txdata version byte, and only store the second commitment (33 bytes)
-		// data = <DerivationVersion1> + <CommitmentType> + hash1 + hash2 + ...
-		numCommitments := len(tx.Data[2:]) / 32
+		// skip txdata version byte, commitment type and dalayer, and only store the second commitment (33 bytes)
+		// data = <DerivationVersion1> + <CommitmentType> + 0xff + hash1 + hash2 + ...
+		hashes := tx.Data[3:]
+		numCommitments := len(hashes) / 32
 		require.Equal(t, numCommitments, n)
 		a.log.Debug("New batched commitments", "numCommitments", numCommitments)
 		for i := 0; i < numCommitments; i++ {
-			a.log.Debug("Commitment", "index", i, "hash", common.Bytes2Hex(tx.Data[2+i*32:2+(i+1)*32]))
+			a.log.Debug("Commitment", "index", i, "hash", common.Bytes2Hex(hashes[i*32:(i+1)*32]))
 		}
 		// Store last commitment
-		a.lastComm = append([]byte{byte(altda.GenericCommitmentType)}, tx.Data[2+(n-1)*32:]...)
+		a.lastComm = append([]byte{byte(altda.GenericCommitmentType), byte(altda.Keccak256DALayer)}, hashes[(n-1)*32:]...)
 	})
 
 	// Include batched commitments in L1 block
@@ -174,7 +175,7 @@ func TestAltDAGeneric_Derivation(gt *testing.T) {
 	verifier.ActL2PipelineFull(t)
 	harness.sequencer.ActL2PipelineFull(t)
 
-	// require.Equal(t, harness.sequencer.SyncStatus().UnsafeL2, verifier.SyncStatus().SafeL2, "verifier synced sequencer data")
+	require.Equal(t, harness.sequencer.SyncStatus().UnsafeL2, verifier.SyncStatus().SafeL2, "verifier synced sequencer data")
 }
 
 
