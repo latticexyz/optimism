@@ -54,6 +54,8 @@ type CommitmentData interface {
 	String() string
 }
 
+// TODO: should we use a struct with composable inheritance instead??
+// TODO: assert that the commitment types implement these interfaces?
 type GenericCommitmentData interface {
 	CommitmentData
 	DALayer() DALayer
@@ -73,6 +75,7 @@ type GenericCommitment []byte
 type GenericKeccak256Commitment []byte
 
 // NewCommitmentData creates a new commitment from the given input and desired type.
+// TODO: we don't have a way to determine if this should be a specific type of generic commitment from the input
 func NewCommitmentData(t CommitmentType, input []byte) CommitmentData {
 	switch t {
 	case Keccak256CommitmentType:
@@ -150,17 +153,7 @@ func (c Keccak256Commitment) String() string {
 
 // NewGenericCommitment creates a new commitment from the given input.
 func NewGenericCommitment(input []byte) CommitmentData {
-	if len(input) == 0 {
-		return nil
-	}
-
-	c := GenericCommitment(input)
-	switch c.DALayer() {
-	case Keccak256DALayer:
-		return NewGenericKeccak256Commitment(input[1:])
-	default:
-		return c
-	}
+	return GenericCommitment(input)
 }
 
 // DecodeGenericCommitment validates and casts the commitment into a GenericCommitment.
@@ -207,11 +200,8 @@ func (c GenericCommitment) DALayer() DALayer {
 }
 
 func NewGenericKeccak256Commitment(input []byte) GenericKeccak256Commitment {
-	hash := crypto.Keccak256(input)
-	commitment := make([]byte, len(hash)+1)
-	commitment[0] = byte(Keccak256DALayer)
-	copy(commitment[1:], hash)
-	return GenericKeccak256Commitment(commitment)
+	comm := crypto.Keccak256(input)
+	return GenericKeccak256Commitment(append([]byte{byte(Keccak256DALayer)}, comm...))
 }
 
 // DecodeGenericKeccak256Commitment validates and creates a GenericKeccak256Commitment
@@ -239,7 +229,7 @@ func (c GenericKeccak256Commitment) Encode() []byte {
 
 // TxData adds an extra version byte to signal it's a commitment.
 func (c GenericKeccak256Commitment) TxData() []byte {
-	return GenericCommitment(c).TxData()
+	return append([]byte{params.DerivationVersion1}, c.Encode()...)
 }
 
 // Verify checks if the commitment matches the given input
@@ -277,3 +267,4 @@ func (c GenericKeccak256Commitment) GetBatchedCommitments() []CommitmentData {
 func (c GenericKeccak256Commitment) DALayer() DALayer {
 	return GenericCommitment(c).DALayer()
 }
+

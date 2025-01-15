@@ -144,16 +144,7 @@ func (d *DAServer) HandlePut(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/put" || r.URL.Path == "/put/" { // without commitment
 		var comm []byte
 		if d.useGenericComm {
-			n, err := rand.Int(rand.Reader, big.NewInt(99999999999999))
-			if err != nil {
-				d.log.Error("Failed to generate commitment", "err", err)
-				w.WriteHeader(http.StatusInternalServerError)
-				return
-			}
-			comm = append(comm, 0x01)
-			comm = append(comm, 0xff)
-			comm = append(comm, n.Bytes()...)
-
+			comm = NewGenericCommitment(input).Encode()
 		} else {
 			comm = NewKeccak256Commitment(input).Encode()
 		}

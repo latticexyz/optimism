@@ -43,6 +43,15 @@ func (td *txData) CallData() []byte {
 	return data
 }
 
+// BatchedCallData encodes each frame independently.
+func (td *txData) BatchedCallData() [][]byte {
+	result := make([][]byte, len(td.frames))
+	for i, f := range td.frames {
+		result[i] = append([]byte{params.DerivationVersion0}, f.data...)
+	}
+	return result
+}
+
 func (td *txData) Blobs() ([]*eth.Blob, error) {
 	blobs := make([]*eth.Blob, 0, len(td.frames))
 	for _, f := range td.frames {

@@ -23,6 +23,14 @@ type MockDAClient struct {
 	log            log.Logger
 }
 
+func NewMockGenericDAClient(log log.Logger) *MockDAClient {
+	return &MockDAClient{
+		CommitmentType: GenericCommitmentType,
+		store:          memorydb.New(),
+		log:            log,
+	}
+}
+
 func NewMockDAClient(log log.Logger) *MockDAClient {
 	return &MockDAClient{
 		CommitmentType: Keccak256CommitmentType,
