@@ -44,12 +44,13 @@ type DeployParams struct {
 
 // TestParams parametrizes the most essential rollup configuration parameters
 type TestParams struct {
-	MaxSequencerDrift   uint64
-	SequencerWindowSize uint64
-	ChannelTimeout      uint64
-	L1BlockTime         uint64
-	UseAltDA            bool
-	AllocType           config.AllocType
+	MaxSequencerDrift     uint64
+	SequencerWindowSize   uint64
+	ChannelTimeout        uint64
+	L1BlockTime           uint64
+	UseAltDA              bool
+	UseGenericCommitments bool
+	AllocType             config.AllocType
 }
 
 func MakeDeployParams(t require.TestingT, tp *TestParams) *DeployParams {
@@ -64,6 +65,11 @@ func MakeDeployParams(t require.TestingT, tp *TestParams) *DeployParams {
 	deployConfig.ChannelTimeoutBedrock = tp.ChannelTimeout
 	deployConfig.L1BlockTime = tp.L1BlockTime
 	deployConfig.UseAltDA = tp.UseAltDA
+	if tp.UseGenericCommitments {
+		deployConfig.DACommitmentType = altda.GenericCommitmentString
+	} else {
+		deployConfig.DACommitmentType = altda.KeccakCommitmentString
+	}
 	ApplyDeployConfigForks(deployConfig)
 
 	logger := log.NewLogger(log.DiscardHandler())
@@ -172,7 +178,7 @@ func Setup(t require.TestingT, deployParams *DeployParams, alloc *AllocParams) *
 			DAChallengeAddress: l1Deployments.DataAvailabilityChallengeProxy,
 			DAChallengeWindow:  deployConf.DAChallengeWindow,
 			DAResolveWindow:    deployConf.DAResolveWindow,
-			CommitmentType:     altda.KeccakCommitmentString,
+			CommitmentType:     deployConf.DACommitmentType,
 		}
 	}
 

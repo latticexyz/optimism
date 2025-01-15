@@ -13,6 +13,7 @@ var (
 	DaServerAddressFlagName       = altDAFlags("da-server")
 	VerifyOnReadFlagName          = altDAFlags("verify-on-read")
 	DaServiceFlagName             = altDAFlags("da-service")
+	BatchedCommitmentsFlagName    = altDAFlags("batched-commitments")
 	PutTimeoutFlagName            = altDAFlags("put-timeout")
 	GetTimeoutFlagName            = altDAFlags("get-timeout")
 	MaxConcurrentRequestsFlagName = altDAFlags("max-concurrent-da-requests")
@@ -56,6 +57,13 @@ func CLIFlags(envPrefix string, category string) []cli.Flag {
 			EnvVars:  altDAEnvs(envPrefix, "DA_SERVICE"),
 			Category: category,
 		},
+		&cli.BoolFlag{
+			Name:     BatchedCommitmentsFlagName,
+			Usage:    "Use batched generic keccak256 commitments.",
+			Value:    false,
+			EnvVars:  altDAEnvs(envPrefix, "BATCHED_COMMITMENTS"),
+			Category: category,
+		},
 		&cli.DurationFlag{
 			Name:     PutTimeoutFlagName,
 			Usage:    "Timeout for put requests. 0 means no timeout.",
@@ -85,6 +93,7 @@ type CLIConfig struct {
 	DAServerURL           string
 	VerifyOnRead          bool
 	GenericDA             bool
+	BatchedCommitments    bool
 	PutTimeout            time.Duration
 	GetTimeout            time.Duration
 	MaxConcurrentRequests uint64
@@ -97,6 +106,9 @@ func (c CLIConfig) Check() error {
 		}
 		if _, err := url.Parse(c.DAServerURL); err != nil {
 			return fmt.Errorf("DA server URL is invalid: %w", err)
+		}
+		if !c.GenericDA && c.BatchedCommitments {
+			return fmt.Errorf("Batched Keccak256 commitments only available for GenericDA")
 		}
 	}
 	return nil
@@ -112,6 +124,7 @@ func ReadCLIConfig(c *cli.Context) CLIConfig {
 		DAServerURL:           c.String(DaServerAddressFlagName),
 		VerifyOnRead:          c.Bool(VerifyOnReadFlagName),
 		GenericDA:             c.Bool(DaServiceFlagName),
+		BatchedCommitments:    c.Bool(BatchedCommitmentsFlagName),
 		PutTimeout:            c.Duration(PutTimeoutFlagName),
 		GetTimeout:            c.Duration(GetTimeoutFlagName),
 		MaxConcurrentRequests: c.Uint64(MaxConcurrentRequestsFlagName),

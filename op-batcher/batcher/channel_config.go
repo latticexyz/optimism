@@ -49,6 +49,8 @@ type ChannelConfig struct {
 	// UseBlobs indicates that this channel should be sent as a multi-blob
 	// transaction with one blob per frame.
 	UseBlobs bool
+
+	UseBatchedCommitments bool
 }
 
 // ChannelConfig returns a copy of the receiver.
@@ -93,7 +95,7 @@ func (cc *ChannelConfig) ReinitCompressorConfig() {
 }
 
 func (cc *ChannelConfig) MaxFramesPerTx() int {
-	if !cc.UseBlobs {
+	if !cc.UseBlobs && !cc.UseBatchedCommitments {
 		return 1
 	}
 	return cc.TargetNumFrames

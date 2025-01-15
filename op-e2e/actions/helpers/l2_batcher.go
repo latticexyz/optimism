@@ -87,7 +87,7 @@ func AltDABatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *Batcher
 	}
 }
 
-func BatchedCommsBatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *BatcherCfg {
+func AltDAGenericCommsBatcherCfg(dp *e2eutils.DeployParams, altDA AltDAInputSetter) *BatcherCfg {
 	return &BatcherCfg{
 		MinL1TxSize:			0,
 		MaxL1TxSize:			128_000,

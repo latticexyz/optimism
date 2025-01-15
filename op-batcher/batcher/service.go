@@ -227,7 +227,10 @@ func (bs *BatcherService) initChannelConfig(cfg *CLIConfig) error {
 			cc.MaxFrameSize = eth.MaxBlobDataSize - 1
 		}
 		cc.UseBlobs = true
-	case flags.CalldataType: // do nothing
+	case flags.CalldataType:
+		if cfg.AltDA.BatchedCommitments {
+			cc.UseBatchedCommitments = true
+		}
 	default:
 		return fmt.Errorf("unknown data availability type: %v", cfg.DataAvailabilityType)
 	}

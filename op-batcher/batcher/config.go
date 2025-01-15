@@ -61,7 +61,8 @@ type CLIConfig struct {
 	MaxBlocksPerSpanBatch int
 
 	// The target number of frames to create per channel. Controls number of blobs
-	// per blob tx, if using Blob DA.
+	// per blob tx, if using Blob DA. Controls number of commitments to batch in the
+	// same tx, if using AltDA Generic Keccak256 commitments.
 	TargetNumFrames int
 
 	// ApproxComprRatio to assume (only [compressor.RatioCompressor]).
