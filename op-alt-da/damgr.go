@@ -241,6 +241,7 @@ func (d *DA) GetInput(ctx context.Context, l1 L1Fetcher, comm CommitmentData, bl
 			return nil, ErrPendingChallenge
 		case ChallengeResolved:
 			if comm.CommitmentType() == GenericCommitmentType {
+				// TODO: we probably don't want to use type assertions here (it might panic)
 				if comm.(GenericKeccak256Commitment).DALayer() == Keccak256DALayer {
 					ch, _ := d.state.GetChallenge(comm, blockId.Number)
 					return ch.input, nil
