@@ -235,7 +235,13 @@ func (a *L2AltDA) ActResolveInput(t helpers.Testing, comm []byte, input []byte, 
 
 func (a *L2AltDA) ActResolveLastChallenge(t helpers.Testing) {
 	// remove derivation byte prefix
-	input, err := a.storage.GetInput(t.Ctx(), altda.Keccak256Commitment(a.lastComm[1:]))
+	var comm altda.CommitmentData
+	if a.altDACfg.CommitmentType == altda.Keccak256CommitmentType {
+		comm = altda.Keccak256Commitment(a.lastComm[1:])
+	} else {
+		comm = altda.GenericKeccak256Commitment(a.lastComm[1:])
+	}
+	input, err := a.storage.GetInput(t.Ctx(), comm)
 	require.NoError(t, err)
 
 	a.ActResolveInput(t, a.lastComm, input, a.lastCommBn)

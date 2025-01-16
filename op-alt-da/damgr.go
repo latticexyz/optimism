@@ -240,9 +240,8 @@ func (d *DA) GetInput(ctx context.Context, l1 L1Fetcher, comm CommitmentData, bl
 			}
 			return nil, ErrPendingChallenge
 		case ChallengeResolved:
-			// Generic Commitments don't resolve from L1 so if we still can't find the data we're out of luck
 			if comm.CommitmentType() == GenericCommitmentType {
-				if comm.(GenericCommitment).DALayer() == Keccak256DALayer {
+				if comm.(GenericKeccak256Commitment).DALayer() == Keccak256DALayer {
 					ch, _ := d.state.GetChallenge(comm, blockId.Number)
 					return ch.input, nil
 				}
@@ -404,7 +403,7 @@ func (d *DA) fetchChallengeLogs(ctx context.Context, l1 L1Fetcher, block eth.Blo
 	// Don't look at the challenge contract if there is no challenge contract.
 	// TODO: figure out how to decide if logs should be fetched (Challenge contract set, or new cfg parameter)
 	// if d.cfg.CommitmentType == GenericCommitmentType && d.cfg.DAChallengeContractAddress == ZeroAddress {
-	if d.cfg.CommitmentType == GenericCommitmentType {
+	if d.cfg.DAChallengeContractAddress == (common.Address{}) {
 		return logs, nil
 	}
 	//cached with deposits events call so not expensive
