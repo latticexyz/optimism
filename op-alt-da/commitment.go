@@ -38,6 +38,8 @@ const (
 	GenericCommitmentType   CommitmentType = 1
 	KeccakCommitmentString  string         = "KeccakCommitment"
 	GenericCommitmentString string         = "GenericCommitment"
+
+	Keccak256DALayer byte = 0xff
 )
 
 // CommitmentData is the binary representation of a commitment.
@@ -49,11 +51,19 @@ type CommitmentData interface {
 	String() string
 }
 
+type BatchedCommitmentData interface {
+	BatchedCommitments() []CommitmentData
+}
+
 // Keccak256Commitment is an implementation of CommitmentData that uses Keccak256 as the commitment function.
 type Keccak256Commitment []byte
 
 // GenericCommitment is an implementation of CommitmentData that treats the commitment as an opaque bytestring.
 type GenericCommitment []byte
+
+type GenericKeccak256Commitment struct {
+	GenericCommitment
+}
 
 // NewCommitmentData creates a new commitment from the given input and desired type.
 func NewCommitmentData(t CommitmentType, input []byte) CommitmentData {
@@ -137,11 +147,18 @@ func NewGenericCommitment(input []byte) GenericCommitment {
 }
 
 // DecodeGenericCommitment validates and casts the commitment into a GenericCommitment.
-func DecodeGenericCommitment(commitment []byte) (GenericCommitment, error) {
+func DecodeGenericCommitment(commitment []byte) (CommitmentData, error) {
 	if len(commitment) == 0 {
 		return nil, ErrInvalidCommitment
 	}
-	return commitment[:], nil
+
+	daByte := commitment[0]
+	switch daByte {
+		case Keccak256DALayer:
+			return DecodeGenericKeccak256Commitment(commitment)
+		default:
+			return GenericCommitment(commitment[:]), nil
+	}
 }
 
 // CommitmentType returns the commitment type of Generic Commitment.
@@ -167,3 +184,32 @@ func (c GenericCommitment) Verify(input []byte) error {
 func (c GenericCommitment) String() string {
 	return hex.EncodeToString(c.Encode())
 }
+
+// DecodeGenericKeccak256Commitment validates and creates a GenericKeccak256Commitment
+func DecodeGenericKeccak256Commitment(commitment []byte) (GenericKeccak256Commitment, error) {
+	if len(commitment) == 0 {
+		return GenericKeccak256Commitment{}, ErrInvalidCommitment
+	}
+	// Strip the DALayer byte
+	if (len(commitment)-1)%32 != 0 {
+		return GenericKeccak256Commitment{}, fmt.Errorf("invalid length for Generic Keccak256 commitment: %d", len(commitment))
+	}
+	return GenericKeccak256Commitment{ GenericCommitment: commitment }, nil
+}
+
+// BatchedCommitments implements the BatchedCommitmentData interface
+func (c GenericKeccak256Commitment) BatchedCommitments() []CommitmentData {
+	// Skip the DA layer byte and calculate how many 32-byte Keccak hashes we have
+	commitment := c.GenericCommitment[1:]
+	numCommitments := len(commitment) / 32
+
+	// Each 32-byte chunk represents a Keccak256 commitment
+	comms := make([]CommitmentData, numCommitments)
+	for i := 0; i < numCommitments; i++ {
+		start := i * 32
+		end := start + 32
+		comms[i] = GenericKeccak256Commitment{GenericCommitment:append([]byte{Keccak256DALayer}, commitment[start:end]...)}
+	}
+	return comms
+}
+
