@@ -349,8 +349,6 @@ func validateAltDAConfig(cfg *Config) error {
 		}
 		if cfg.AltDAConfig.CommitmentType == altda.KeccakCommitmentString && cfg.AltDAConfig.DAChallengeAddress == (common.Address{}) {
 			return errors.New("Must set da_challenge_contract_address for keccak commitments")
-		} else if cfg.AltDAConfig.CommitmentType == altda.GenericCommitmentString && cfg.AltDAConfig.DAChallengeAddress != (common.Address{}) {
-			return errors.New("Must set empty da_challenge_contract_address for generic commitments")
 		}
 	}
 	return nil

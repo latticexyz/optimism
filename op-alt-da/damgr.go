@@ -240,15 +240,12 @@ func (d *DA) GetInput(ctx context.Context, l1 L1Fetcher, comm CommitmentData, bl
 			}
 			return nil, ErrPendingChallenge
 		case ChallengeResolved:
-			// Generic Commitments don't resolve from L1 so if we still can't find the data we're out of luck
-			if comm.CommitmentType() == GenericCommitmentType {
+			// If there is no challenge contract, it means the current setup doesn't resolve from L1
+			if d.cfg.DAChallengeContractAddress == (common.Address{}) {
 				return nil, ErrMissingPastWindow
 			}
-			// Keccak commitments resolve from L1, so we should have the data in the challenge resolved input
-			if comm.CommitmentType() == Keccak256CommitmentType {
-				ch, _ := d.state.GetChallenge(comm, blockId.Number)
-				return ch.input, nil
-			}
+			ch, _ := d.state.GetChallenge(comm, blockId.Number)
+			return ch.input, nil
 		}
 	}
 	// regardless of the potential notFound error, if this challenge status is not handled, return an error
@@ -362,18 +359,15 @@ func (d *DA) loadChallengeEvents(ctx context.Context, l1 L1Fetcher, block eth.Bl
 				continue
 			}
 
-			var input []byte
-			if d.cfg.CommitmentType == Keccak256CommitmentType {
-				// Decode the input from resolver tx calldata
-				input, err = DecodeResolvedInput(tx.Data())
-				if err != nil {
-					d.log.Error("failed to decode resolved input", "block", block.Number, "txIdx", i, "err", err)
-					continue
-				}
-				if err := comm.Verify(input); err != nil {
-					d.log.Error("failed to verify commitment", "block", block.Number, "txIdx", i, "err", err)
-					continue
-				}
+			// Decode the input from resolver tx calldata
+			input, err := DecodeResolvedInput(tx.Data())
+			if err != nil {
+				d.log.Error("failed to decode resolved input", "block", block.Number, "txIdx", i, "err", err)
+				continue
+			}
+			if err := comm.Verify(input); err != nil {
+				d.log.Error("failed to verify commitment", "block", block.Number, "txIdx", i, "err", err)
+				continue
 			}
 
 			d.log.Info("challenge resolved", "block", block, "txIdx", i)
@@ -397,7 +391,7 @@ func (d *DA) loadChallengeEvents(ctx context.Context, l1 L1Fetcher, block eth.Bl
 func (d *DA) fetchChallengeLogs(ctx context.Context, l1 L1Fetcher, block eth.BlockID) ([]*types.Log, error) {
 	var logs []*types.Log
 	// Don't look at the challenge contract if there is no challenge contract.
-	if d.cfg.CommitmentType == GenericCommitmentType {
+	if d.cfg.DAChallengeContractAddress == (common.Address{}) {
 		return logs, nil
 	}
 	//cached with deposits events call so not expensive
