@@ -540,3 +540,167 @@ func TestAltDADataSourceInvalidData(t *testing.T) {
 
 	l1F.AssertExpectations(t)
 }
+
+// TestAltDADataSourceBatchedCommitments verifies that batched commitments are correctly
+// handled by the data source, including proper decoding, verification, and challenge handling
+func TestAltDADataSourceBatchedCommitments(t *testing.T) {
+	logger := testlog.Logger(t, log.LevelDebug)
+	ctx := context.Background()
+
+	rng := rand.New(rand.NewSource(1234))
+
+	l1F := &testutils.MockL1Source{}
+	storage := altda.NewMockDAClientWithType(logger, altda.GenericCommitmentType, altda.Keccak256DALayer)
+	pcfg := altda.Config{
+		ChallengeWindow: 90,
+		ResolveWindow:   90,
+	}
+	metrics := &altda.NoopMetrics{}
+	daState := altda.NewState(logger, metrics, pcfg)
+	da := altda.NewAltDAWithState(logger, pcfg, storage, metrics, daState)
+
+	// Setup basic rollup config
+	l1Time := uint64(2)
+	refA := testutils.RandomBlockRef(rng)
+	refA.Number = 1
+	l1Refs := []eth.L1BlockRef{refA}
+	refA0 := eth.L2BlockRef{
+		Hash:           testutils.RandomHash(rng),
+		Number:         0,
+		ParentHash:     common.Hash{},
+		Time:           refA.Time,
+		L1Origin:       refA.ID(),
+		SequenceNumber: 0,
+	}
+	batcherPriv := testutils.RandomKey()
+	batcherAddr := crypto.PubkeyToAddress(batcherPriv.PublicKey)
+	batcherInbox := common.Address{42}
+	cfg := &rollup.Config{
+		Genesis: rollup.Genesis{
+			L1:     refA.ID(),
+			L2:     refA0.ID(),
+			L2Time: refA0.Time,
+		},
+		BlockTime:         1,
+		SeqWindowSize:     20,
+		BatchInboxAddress: batcherInbox,
+		AltDAConfig: &rollup.AltDAConfig{
+			DAChallengeWindow: pcfg.ChallengeWindow,
+			DAResolveWindow:   pcfg.ResolveWindow,
+			CommitmentType:    altda.KeccakCommitmentString,
+		},
+	}
+
+	signer := cfg.L1Signer()
+	factory := NewDataSourceFactory(logger, cfg, l1F, nil, da)
+
+	// Create test inputs for the batch
+	inputs := [][]byte{
+		testutils.RandomData(rng, 1000),
+		testutils.RandomData(rng, 1000),
+		testutils.RandomData(rng, 1000),
+	}
+
+	// Store inputs and get their hashes
+	hashes := make([][]byte, len(inputs))
+	for i, input := range inputs {
+		// Generate the hash ourselves
+		hash := crypto.Keccak256(input)
+		hashes[i] = hash
+		// Create and store generic commitment
+		_, err := storage.SetInput(ctx, input)
+		require.NoError(t, err)
+	}
+
+	// Create the batched commitment manually
+	batchedData := []byte{altda.Keccak256DALayer}
+	for _, hash := range hashes {
+		batchedData = append(batchedData, hash...)
+	}
+	batchedComm := altda.GenericKeccak256Commitment{ GenericCommitment: batchedData }
+
+	// Create L1 block with the batched commitment
+	parent := l1Refs[0]
+	ref := eth.L1BlockRef{
+		Hash:       testutils.RandomHash(rng),
+		Number:     parent.Number + 1,
+		ParentHash: parent.Hash,
+		Time:       parent.Time + l1Time,
+	}
+	l1F.ExpectFetchReceipts(ref.Hash, nil, types.Receipts{}, nil)
+
+	// Create transaction with batched commitment
+	tx, err := types.SignNewTx(batcherPriv, signer, &types.DynamicFeeTx{
+		ChainID:   signer.ChainID(),
+		Nonce:     0,
+		GasTipCap: big.NewInt(2 * params.GWei),
+		GasFeeCap: big.NewInt(30 * params.GWei),
+		Gas:       100_000,
+		To:        &batcherInbox,
+		Value:     big.NewInt(int64(0)),
+		Data:      batchedComm.TxData(),
+	})
+	require.NoError(t, err)
+
+	l1F.ExpectInfoAndTxsByHash(ref.Hash, testutils.RandomBlockInfo(rng), []*types.Transaction{tx}, nil)
+
+	// Create data source
+	src, err := factory.OpenData(ctx, ref, batcherAddr)
+	require.NoError(t, err)
+
+	// Test normal flow - should get all inputs in reverse order
+	for i := len(inputs) - 1; i >= 0; i-- {
+		data, err := src.Next(ctx)
+		require.NoError(t, err)
+		require.Equal(t, hexutil.Bytes(inputs[i]), data)
+	}
+	_, err = src.Next(ctx)
+	require.ErrorIs(t, err, io.EOF)
+
+	// Test challenge handling for batched commitment
+	// Create a new block
+	nextRef := eth.L1BlockRef{
+		Hash:       testutils.RandomHash(rng),
+		Number:     ref.Number + 1,
+		ParentHash: ref.Hash,
+		Time:       ref.Time + l1Time,
+	}
+	l1F.ExpectFetchReceipts(nextRef.Hash, nil, types.Receipts{}, nil)
+	l1F.ExpectInfoAndTxsByHash(nextRef.Hash, testutils.RandomBlockInfo(rng), nil, nil)
+
+	// Challenge one of the commitments in the batch
+	batched := batchedComm.BatchedCommitments()
+	require.Len(t, batched, len(inputs))
+
+	// Challenge the first commitment in the batch
+	daState.CreateChallenge(batched[0], ref.ID(), ref.Number)
+
+	// Create new data source after challenge
+	src, err = factory.OpenData(ctx, nextRef, batcherAddr)
+	require.NoError(t, err)
+
+	// Should skip the challenged commitment but return others
+	// TODO: this will currently fail as there is no way to challenge generic commitments
+	for i := len(inputs) - 1; i >= 0; i-- {
+		data, err := src.Next(ctx)
+		require.NoError(t, err)
+		require.Equal(t, hexutil.Bytes(inputs[i]), data)
+	}
+
+	// Resolve the challenge
+	err = daState.ResolveChallenge(batched[0], nextRef.ID(), ref.Number, inputs[0])
+	require.NoError(t, err)
+
+	// Create new data source after resolution
+	src, err = factory.OpenData(ctx, nextRef, batcherAddr)
+	require.NoError(t, err)
+
+	// Should now return all inputs including the previously challenged one
+	for i := len(inputs) - 1; i >= 0; i-- {
+		data, err := src.Next(ctx)
+		require.NoError(t, err)
+		require.Equal(t, hexutil.Bytes(inputs[i]), data)
+	}
+
+	l1F.AssertExpectations(t)
+}

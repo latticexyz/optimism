@@ -65,13 +65,13 @@ type GenericKeccak256Commitment struct {
 	GenericCommitment
 }
 
-// NewCommitmentData creates a new commitment from the given input and desired type.
-func NewCommitmentData(t CommitmentType, input []byte) CommitmentData {
+// NewCommitmentData creates a new commitment from the given input, type and daLayer if applicable.
+func NewCommitmentData(t CommitmentType, daLayer byte, input []byte) CommitmentData {
 	switch t {
 	case Keccak256CommitmentType:
 		return NewKeccak256Commitment(input)
 	case GenericCommitmentType:
-		return NewGenericCommitment(input)
+		return NewGenericCommitment(daLayer, input)
 	default:
 		return nil
 	}
@@ -142,8 +142,11 @@ func (c Keccak256Commitment) String() string {
 }
 
 // NewGenericCommitment creates a new commitment from the given input.
-func NewGenericCommitment(input []byte) GenericCommitment {
-	return GenericCommitment(input)
+func NewGenericCommitment(daLayer byte, input []byte) CommitmentData {
+	if daLayer == Keccak256DALayer {
+		return NewGenericKeccak256Commitment(input);
+	}
+	return GenericCommitment(append([]byte{daLayer}, input...))
 }
 
 // DecodeGenericCommitment validates and casts the commitment into a GenericCommitment.
@@ -185,6 +188,10 @@ func (c GenericCommitment) String() string {
 	return hex.EncodeToString(c.Encode())
 }
 
+func NewGenericKeccak256Commitment(input []byte) GenericKeccak256Commitment {
+	return GenericKeccak256Commitment{ GenericCommitment: append([]byte{Keccak256DALayer}, crypto.Keccak256(input)...) }
+}
+
 // DecodeGenericKeccak256Commitment validates and creates a GenericKeccak256Commitment
 func DecodeGenericKeccak256Commitment(commitment []byte) (GenericKeccak256Commitment, error) {
 	// Take into account the DA Layer byte
@@ -209,7 +216,7 @@ func (c GenericKeccak256Commitment) BatchedCommitments() []CommitmentData {
 	for i := 0; i < numCommitments; i++ {
 		start := i * 32
 		end := start + 32
-		comms[i] = GenericKeccak256Commitment{GenericCommitment:append([]byte{Keccak256DALayer}, commitment[start:end]...)}
+		comms[i] = GenericKeccak256Commitment{ GenericCommitment:append([]byte{Keccak256DALayer}, commitment[start:end]...) }
 	}
 	return comms
 }

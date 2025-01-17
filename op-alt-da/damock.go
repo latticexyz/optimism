@@ -19,6 +19,7 @@ import (
 // in unit tests.
 type MockDAClient struct {
 	CommitmentType CommitmentType
+	daLayer        byte
 	store          ethdb.KeyValueStore
 	log            log.Logger
 }
@@ -26,6 +27,16 @@ type MockDAClient struct {
 func NewMockDAClient(log log.Logger) *MockDAClient {
 	return &MockDAClient{
 		CommitmentType: Keccak256CommitmentType,
+		store:          memorydb.New(),
+		log:            log,
+	}
+}
+
+// NewMockDAClientWithType creates a new MockDAClient with specified CommitmentType and DALayer
+func NewMockDAClientWithType(log log.Logger, commitmentType CommitmentType, daLayer byte) *MockDAClient {
+	return &MockDAClient{
+		CommitmentType: commitmentType,
+		daLayer:        daLayer,
 		store:          memorydb.New(),
 		log:            log,
 	}
@@ -40,7 +51,7 @@ func (c *MockDAClient) GetInput(ctx context.Context, key CommitmentData) ([]byte
 }
 
 func (c *MockDAClient) SetInput(ctx context.Context, data []byte) (CommitmentData, error) {
-	key := NewCommitmentData(c.CommitmentType, data)
+	key := NewCommitmentData(c.CommitmentType, c.daLayer, data)
 	return key, c.store.Put(key.Encode(), data)
 }
 
