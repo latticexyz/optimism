@@ -187,12 +187,13 @@ func (c GenericCommitment) String() string {
 
 // DecodeGenericKeccak256Commitment validates and creates a GenericKeccak256Commitment
 func DecodeGenericKeccak256Commitment(commitment []byte) (GenericKeccak256Commitment, error) {
-	if len(commitment) == 0 {
+	// Take into account the DA Layer byte
+	if len(commitment) <= 1 {
 		return GenericKeccak256Commitment{}, ErrInvalidCommitment
 	}
 	// Strip the DALayer byte
 	if (len(commitment)-1)%32 != 0 {
-		return GenericKeccak256Commitment{}, fmt.Errorf("invalid length for Generic Keccak256 commitment: %d", len(commitment))
+		return GenericKeccak256Commitment{}, ErrInvalidCommitment
 	}
 	return GenericKeccak256Commitment{ GenericCommitment: commitment }, nil
 }
