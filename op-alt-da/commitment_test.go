@@ -81,4 +81,3 @@ func TestCommitmentData(t *testing.T) {
 		})
 	}
 }
-
